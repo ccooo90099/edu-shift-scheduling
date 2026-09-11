@@ -44,3 +44,39 @@ def test_午休是唯一来得及跨中心的窗口():
     assert wait("10:30-12:30", "14:00-16:00") == 90
     assert wait("14:00-16:00", "16:20-18:20") == 20
     assert wait("16:20-18:20", "18:30-20:30") == 10
+
+
+# ── "挨着"的间隔阈值自动推算 ────────────────────────────────────
+from engine.slots import adjacency_waits, derive_adjacency_limit   # noqa: E402
+
+
+def test_列出所有相接组合的等待时长():
+    assert adjacency_waits(SLOTS) == [10, 20, 50, 60, 90]
+
+
+def test_自动推算把课间和午休分开():
+    """教培不是托管，午休家长接走 —— 跨午休不能算"挨着"。"""
+    limit, waits, why = derive_adjacency_limit(SLOTS)
+    assert limit == 20
+    assert "2.5 倍" in why
+    # 课间算挨着
+    assert all(w <= limit for w in (10, 20))
+    # 午休那档不算
+    assert all(w > limit for w in (50, 60, 90))
+
+
+def test_时段表变了阈值跟着变():
+    """改时段不用记得回来改死数。"""
+    紧凑 = ["09:00-10:00", "10:10-11:10", "11:20-12:20", "14:00-15:00"]
+    limit, _, _ = derive_adjacency_limit(紧凑)
+    assert limit == 10            # 课间 10 分钟，午休 100 分钟被排除
+
+
+def test_只有两个时段时也能推():
+    limit, waits, _ = derive_adjacency_limit(["09:00-10:00", "10:20-11:20"])
+    assert waits == [20] and limit == 20
+
+
+def test_单个时段推不出跳变但不报错():
+    limit, waits, why = derive_adjacency_limit(["09:00-10:00"])
+    assert limit is None and waits == [] and "推不出" in why

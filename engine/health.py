@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from itertools import combinations
 
 from .data import TIME_COL, load_schedule
-from .slots import make_gap_counter, overlaps
+from .slots import derive_adjacency_limit, make_gap_counter, overlaps
 from .travel import Travel, load_geo
 
 
@@ -32,6 +32,7 @@ class Report:
     产品撞车团队数: int = 0
     教室撞车: int = 0
     连堂: list = field(default_factory=list)     # (名称, 强度, 总数, 不夹课, 真挨着, 阈值)
+    间隔阈值说明: str = ""
     当日人次: int = 0
     单中心人次: int = 0
     转场次数: int = 0
@@ -106,11 +107,15 @@ def _check_adjacency(df, cfg, rep):
     block = cfg.get("连堂", {}) or {}
     scope = block.get("分组范围") or ["校区", "程度", "团队类型"]
     gap_count = make_gap_counter(cfg["时段"])
+    auto_limit, _, why = derive_adjacency_limit(cfg["时段"])
+    rep.间隔阈值说明 = why
 
     for rule in block.get("规则") or []:
         products = rule["产品"]
         allowed = int(rule.get("允许中间隔", 0))
         limit = rule.get("最大间隙_分钟")
+        if limit in ("自动", "auto", None):
+            limit = auto_limit
         ordered = rule.get("顺序") == "按列表"
         total = loose = tight = 0
 

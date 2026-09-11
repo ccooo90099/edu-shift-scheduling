@@ -32,6 +32,8 @@ def render(rep, name):
     add("  H3 教室同时段撞车     %s" % ("✓ 0" if not rep.教室撞车 else "✕ %d 处" % rep.教室撞车))
 
     add("\n连堂（S1）")
+    if rep.间隔阈值说明:
+        add("  间隔阈值（自动推算）：%s" % rep.间隔阈值说明)
     for name_, strength, total, loose, tight, limit in rep.连堂:
         line = "  %-14s [%s]  中间不夹别的课 %d/%d（%.0f%%）" % (
             name_, strength, loose, total, 100 * loose / max(total, 1))

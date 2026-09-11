@@ -32,3 +32,38 @@ def make_gap_counter(slot_texts):
         return sum(1 for s in parsed if a[1] <= s[0] and s[1] <= b[0])
 
     return gap_count
+
+
+def adjacency_waits(slot_texts):
+    """所有"中间夹不下别的课"的相接组合，学生各要等多久（去重排序）。"""
+    parsed = sorted(parse_slot(s) for s in slot_texts)
+    gap_count = make_gap_counter(slot_texts)
+    waits = set()
+    for i, a in enumerate(parsed):
+        for b in parsed[i + 1:]:
+            if b[0] < a[1]:                 # 两个时段重叠，不是先后关系
+                continue
+            if gap_count(a, b) == 0:
+                waits.add(b[0] - a[1])
+    return sorted(waits)
+
+
+def derive_adjacency_limit(slot_texts):
+    """从时段表推算"挨着"的间隔上限。
+
+    把相接组合的间隔排序，找最大的一次跳变：跳变以下是课间，以上是午休那种
+    真正的休息。教培不是托管，午休家长要把孩子接走，所以跨午休不算"挨着"。
+
+    返回 (上限分钟, 所有间隔, 一句话说明)。推不出来时上限是 None。
+    """
+    waits = [w for w in adjacency_waits(slot_texts) if w > 0]
+    if len(waits) < 2:
+        return (waits[0] if waits else None), waits, "时段太少，推不出跳变"
+
+    ratios = [(waits[i + 1] / waits[i], i) for i in range(len(waits) - 1)]
+    ratio, index = max(ratios)
+    limit = waits[index]
+    return limit, waits, ("%d → %d 分钟是最大跳变（%.1f 倍）：%s 算课间，%s 算休息"
+                          % (limit, waits[index + 1], ratio,
+                             "/".join(str(w) for w in waits if w <= limit),
+                             "/".join(str(w) for w in waits if w > limit)))
