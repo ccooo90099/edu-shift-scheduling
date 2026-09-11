@@ -3,6 +3,9 @@
 把「人工在 Excel 里手工拖排班」变成「输入约束 → 自动生成排班表 + 看板 + 冲突报告」。
 跨平台桌面应用，分用户端和管理端两个产物。
 
+Codex / Claude 的共同入口是 [`AGENTS.md`](AGENTS.md)，[`CLAUDE.md`](CLAUDE.md) 指向它。
+详细[异步交流协议](docs/collaboration/README.md)规定每次交流新增消息文件，注明回复对象、代码版本和证据。
+
 ## 现状
 
 | 模块 | 状态 |
@@ -30,8 +33,10 @@
 ## 开发
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate                 # Windows：.venv\Scripts\activate
 pip install -r requirements.txt -r requirements-dev.txt
-QT_QPA_PLATFORM=offscreen pytest          # 95 项
+QT_QPA_PLATFORM=offscreen pytest          # 106 项
 
 python apps/user/main.py                  # 用户端
 python apps/admin/main.py                 # 管理端
@@ -57,8 +62,18 @@ python tools/schedule.py 排班明细.xlsx --mode repair --out 修复后.xlsx
 ```bash
 cp config/rules.example.yaml config/rules.yaml     # 改规则只改这个文件
 cp config/centers.example.csv config/centers.csv   # 补上 30 个中心的经纬度
+python tools/geocode_centers.py                   # 默认 OSM，无需 key
 python tools/health_check.py 排班明细.xlsx --config config/rules.yaml --out 违规清单.csv
 ```
+
+已有本地配置时不要重复复制模板。坐标查询只补空值，未命中的中心保留为空；
+有部分未命中时退出码为 1，但成功的坐标仍会写入 `config/centers.csv`。
+脚本会拒绝 OSM 返回地名或行政区不匹配的结果，并保存「地图名称」「地图地址」。
+核对这些字段和「定位依据」，为失败或模糊命中的中心补详细地址：社区、地铁站等地名的
+中心点不等于门店位置，尤其不能据此确认两家门店是否就在隔壁。
+两端都有坐标的转场会自动使用「直线估算」，缺坐标的仍会使用粗判。
+核准坐标后可运行 `python tools/travel_matrix.py` 获取免 key 的驾车路线估计；
+它不代表实时路况或高峰通勤实测。
 
 管理端也有命令行版：
 
@@ -91,7 +106,7 @@ CI 在 macOS arm64 / macOS Intel / Windows x64 三个平台各打两个端。
 | `apps/` | 两端界面 |
 | `tools/` | 命令行：体检、签发许可、嵌公钥 |
 | `packaging/` | PyInstaller spec |
-| `tests/` | 95 项测试，含端到端授权链路与地图工具 |
+| `tests/` | 106 项测试，含端到端授权链路与地图工具 |
 
 ## 数据与密钥
 
