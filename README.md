@@ -2,21 +2,46 @@
 
 把「人工在 Excel 里手工拖排班」变成「输入约束 → 自动生成排班表 + 看板 + 冲突报告」。
 
-## 当前状态
+## 现在能用的
 
-需求梳理阶段。**先看 [`docs/需求理解.md`](docs/需求理解.md)** —— 里面有数据模型、约束清单、
-现状基线，以及 8 个需要先对齐的问题（Q1/Q2/Q3 不定下来就没法开工）。
+**排班体检** —— 按配置的口径检查一份现有排班，输出违规清单和基线分。
+
+```bash
+pip install -r requirements.txt
+cp config/rules.example.yaml config/rules.yaml      # 改规则只改这个文件
+cp config/centers.example.csv config/centers.csv    # 补上 30 个中心的经纬度
+
+python tools/health_check.py 排班明细.xlsx \
+       --config config/rules.yaml --out 违规清单.csv
+```
+
+输出长这样：
+
+```
+硬约束
+  H1 老师同时段撞车     ✓ 0
+  H2 同撮学生撞产品     ✕   （316 对撞车，涉及 407 / 661 个团队，62%）
+  H3 教室同时段撞车     ✓ 0
+
+连堂（S1）
+  编程双语连堂         [硬]  中间不夹别的课 81/135（60%）；其中等待 ≤30 分钟的 51（38%）
+
+老师跑场（S2 / S3）
+  跨中心转场 96 次，赶路时间不够的 24 次
+  转场总里程约 985 km，平均每次 10.3 km
+```
 
 ## 目录
 
 | 路径 | 内容 |
 |---|---|
-| `docs/需求理解.md` | 需求理解文档（v0.1） |
-| `analysis/explore_source.py` | 源表探查脚本，文档里所有统计数字由它产出 |
+| `docs/需求理解.md` | 需求文档：数据模型、硬/软约束、现状基线、待办 |
+| `config/rules.example.yaml` | 规则配置（冲突口径 / 连堂 / 地理 / 权重） |
+| `config/centers.example.csv` | 30 个中心的坐标表模板，**待补经纬度** |
+| `tools/health_check.py` | 排班体检 |
+| `analysis/explore_source.py` | 源表探查，用来摸新数据的底 |
 
-```bash
-pip install pandas openpyxl
-python analysis/explore_source.py 排班明细.xlsx [sheet名]
-```
+## 数据
 
-> 源表含真实姓名与门店信息，不入库；开发请用脱敏样例，字段结构见需求文档 §1.2。
+源表含真实姓名与门店信息，不入库。`config/rules.yaml`、`config/centers.csv`、
+`config/travel_minutes.csv` 同样已在 `.gitignore` 里——仓库里只留 `.example` 模板。

@@ -6,3 +6,8 @@ venv/
 *.xls
 ~$*
 .DS_Store
+
+# 真实配置与数据不入库（含门店坐标、实测通行时间）
+config/rules.yaml
+config/centers.csv
+config/travel_minutes.csv
