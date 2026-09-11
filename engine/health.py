@@ -229,11 +229,15 @@ def run(schedule_path, cfg, sheet=None, df=None):
     rep.工作量方差 = float(statistics.pvariance(load)) if len(load) > 1 else 0.0
 
     w = cfg["权重"]
+
+    def weight(name, default=0):
+        # 配置里少一项不该让整份体检报告挂掉 —— 缺的按 0 算并照常出报告
+        return w.get(name, default)
     adj_miss = sum(total - tight for _, _, total, _, tight, _ in rep.连堂)
-    rep.罚分 = (w["连堂不相邻"] * adj_miss
-                + w["转场时间不够"] * rep.赶不及次数
-                + w["每公里转场"] * rep.转场里程
-                + w["跨中心一次"] * rep.转场次数
-                + w["课表空档一段"] * rep.空档段数
-                + w["工作量方差"] * rep.工作量方差)
+    rep.罚分 = (weight("连堂不相邻", 60) * adj_miss
+                + weight("转场时间不够", 400) * rep.赶不及次数
+                + weight("每公里转场", 6) * rep.转场里程
+                + weight("跨中心一次", 800) * rep.转场次数
+                + weight("课表空档一段", 8) * rep.空档段数
+                + weight("工作量方差", 3) * rep.工作量方差)
     return rep
