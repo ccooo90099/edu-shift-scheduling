@@ -25,8 +25,11 @@ ENTRY_POINTS = [
                          ids=[a[0].split("/")[-1] + ":" + a[1] for a, _ in ENTRY_POINTS])
 def test_中文输出在cp1252控制台下不崩(argv, expected, tmp_path):
     env = dict(os.environ, PYTHONIOENCODING="cp1252", QT_QPA_PLATFORM="offscreen")
+    # 父进程必须显式按 UTF-8 解码：Windows 上 text=True 默认走 cp1252，
+    # 子进程输出的 UTF-8 会在读取线程里解码失败，stdout 直接变成 None
     result = subprocess.run([sys.executable] + argv, cwd=ROOT, env=env,
-                            capture_output=True, text=True, timeout=120)
+                            capture_output=True, encoding="utf-8", errors="replace",
+                            timeout=120)
     combined = result.stdout + result.stderr
     assert "UnicodeEncodeError" not in combined, combined[-800:]
     assert result.returncode == expected, combined[-800:]

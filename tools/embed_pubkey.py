@@ -27,7 +27,21 @@ def main():
     ap.add_argument("--key", default="", help="Ed25519 公钥的 base64（32 字节裸公钥）")
     ap.add_argument("--allow-missing", action="store_true",
                     help="key 为空时不报错，保留占位符（产出的是跑不起来的开发版）")
+    ap.add_argument("--verify", action="store_true",
+                    help="只检查源码里是否已经钉死了公钥，不做修改。钉死返回 0，还是占位符返回 1")
     args = ap.parse_args()
+
+    if args.verify:
+        text = GATE.read_text(encoding="utf-8")
+        match = PATTERN.search(text)
+        if not match:
+            sys.exit("在 %s 里找不到 PUBLIC_KEY_B64 这一行" % GATE)
+        current = match.group(0).split('"')[1]
+        if current == PLACEHOLDER:
+            print("源码里还是占位符，没有钉死公钥")
+            sys.exit(1)
+        print("源码里已钉死公钥 %s…%s" % (current[:8], current[-6:]))
+        return
 
     key = args.key.strip()
     if not key:

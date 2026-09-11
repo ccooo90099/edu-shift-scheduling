@@ -6,6 +6,7 @@
 """
 import json
 import os
+import shutil
 import sys
 from datetime import datetime, timedelta, timezone
 
@@ -13,7 +14,7 @@ from PySide6 import QtCore, QtWidgets
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from apps.common.ui import MONO, STYLESHEET, StatusBanner, mono_label, picker   # noqa: E402
+from apps.common.ui import CRIT, GOOD, MONO, STYLESHEET, StatusBanner, mono_label   # noqa: E402
 from licensing import keys, license as lic   # noqa: E402
 from licensing.fingerprint import machine_fingerprint   # noqa: E402
 from licensing.gate import app_data_dir   # noqa: E402
@@ -43,8 +44,13 @@ def append_ledger(entry):
         json.dump(rows, f, ensure_ascii=False, indent=2)
 
 
+def stored_key_path():
+    """私钥由程序自己保管，用户不用关心放在哪。备份用「备份私钥」按钮。"""
+    return app_data_dir() / "secrets" / "admin_private.pem"
+
+
 class KeyTab(QtWidgets.QWidget):
-    """生成密钥对，并给出要嵌进用户端的那串公钥。"""
+    """私钥的生成、导入、解锁、备份；并给出要固定进用户端的那串公钥。"""
     changed = QtCore.Signal()
 
     def __init__(self, state):
@@ -54,113 +60,214 @@ class KeyTab(QtWidgets.QWidget):
         layout.setSpacing(12)
 
         warn = QtWidgets.QLabel(
-            "私钥一旦泄露，任何人都能签发许可；一旦丢失，已发出的许可仍有效，"
-            "但再也签不出新的。请离线备份，且不要放进代码仓库。")
+            "私钥一旦泄露，任何人都能签发许可；一旦丢失，已发出的许可仍然有效，"
+            "但再也签不出新的。生成后请立刻用「备份私钥」存一份到离线的地方。")
         warn.setWordWrap(True)
         warn.setStyleSheet("color: #B77400;")
         layout.addWidget(warn)
 
-        box = QtWidgets.QGroupBox("密钥文件")
-        grid = QtWidgets.QGridLayout(box)
-        grid.setColumnStretch(1, 1)
-        row, self.dir_edit = picker(self, "存放密钥的文件夹", self.pick_dir)
-        self.dir_edit.setText(str(app_data_dir() / "secrets"))
-        grid.addWidget(QtWidgets.QLabel("目录"), 0, 0)
-        grid.addWidget(row, 0, 1, 1, 2)
+        box = QtWidgets.QGroupBox("私钥")
+        inner = QtWidgets.QVBoxLayout(box)
 
-        generate = QtWidgets.QPushButton("生成密钥对")
-        generate.setObjectName("primary")
-        generate.clicked.connect(self.generate)
-        grid.addWidget(generate, 1, 1)
-        load = QtWidgets.QPushButton("载入已有私钥")
-        load.clicked.connect(self.load_existing)
-        grid.addWidget(load, 1, 2)
+        self.status = QtWidgets.QLabel()
+        self.status.setWordWrap(True)
+        inner.addWidget(self.status)
+
+        buttons = QtWidgets.QHBoxLayout()
+        self.unlock_button = QtWidgets.QPushButton("解锁")
+        self.unlock_button.setObjectName("primary")
+        self.unlock_button.clicked.connect(self.unlock)
+        buttons.addWidget(self.unlock_button)
+
+        self.generate_button = QtWidgets.QPushButton("生成私钥")
+        self.generate_button.clicked.connect(self.generate)
+        buttons.addWidget(self.generate_button)
+
+        self.import_button = QtWidgets.QPushButton("导入私钥…")
+        self.import_button.clicked.connect(self.import_key)
+        buttons.addWidget(self.import_button)
+
+        self.backup_button = QtWidgets.QPushButton("备份私钥…")
+        self.backup_button.clicked.connect(self.backup)
+        buttons.addWidget(self.backup_button)
+        buttons.addStretch(1)
+        inner.addLayout(buttons)
         layout.addWidget(box)
 
-        box = QtWidgets.QGroupBox("嵌进用户端的公钥（构建时用）")
+        box = QtWidgets.QGroupBox("公钥（要固定进用户端的那一串）")
         inner = QtWidgets.QVBoxLayout(box)
         self.pub_view = QtWidgets.QPlainTextEdit()
         self.pub_view.setReadOnly(True)
         self.pub_view.setFixedHeight(56)
         self.pub_view.setStyleSheet("font-family: %s;" % MONO)
-        self.pub_view.setPlaceholderText("生成或载入密钥后显示")
+        self.pub_view.setPlaceholderText("生成、导入或解锁私钥后显示")
         inner.addWidget(self.pub_view)
-        hint = QtWidgets.QLabel(
-            "把这串填进 GitHub 仓库的 Secret「LICENSE_PUBLIC_KEY_B64」，"
-            "CI 构建用户端时会自动写进程序。公钥可以公开，私钥绝对不行。")
-        hint.setWordWrap(True)
-        hint.setStyleSheet("color: palette(mid);")
-        inner.addWidget(hint)
+        tip = QtWidgets.QLabel(
+            "公钥可以公开，随便发——验签只需要公钥。把它固定进用户端源码"
+            "（licensing/gate.py 的 PUBLIC_KEY_B64）。私钥绝对不要发出去。")
+        tip.setWordWrap(True)
+        tip.setStyleSheet("color: palette(mid);")
+        inner.addWidget(tip)
+
+        row = QtWidgets.QHBoxLayout()
         copy = QtWidgets.QPushButton("复制公钥")
-        copy.clicked.connect(lambda: QtWidgets.QApplication.clipboard().setText(
-            self.pub_view.toPlainText()))
-        inner.addWidget(copy, 0, QtCore.Qt.AlignLeft)
+        copy.clicked.connect(self.copy_public)
+        row.addWidget(copy)
+        export = QtWidgets.QPushButton("另存公钥为文件…")
+        export.clicked.connect(self.export_public)
+        row.addWidget(export)
+        row.addStretch(1)
+        inner.addLayout(row)
         layout.addWidget(box)
         layout.addStretch(1)
+        self.refresh()
 
-    def pick_dir(self):
-        path = QtWidgets.QFileDialog.getExistingDirectory(self, "选择密钥目录")
-        if path:
-            self.dir_edit.setText(path)
+    # ── 状态 ──────────────────────────────────────────────────────
+    def refresh(self):
+        loaded = self.state.get("key") is not None
+        exists = stored_key_path().exists()
+        if loaded:
+            self.status.setText("● 私钥已解锁，可以去「签发许可」了。私钥只在内存里，退出即释放。")
+            self.status.setStyleSheet("color: %s;" % GOOD)
+        elif exists:
+            self.status.setText("○ 本机已有私钥，还没解锁 — 点「解锁」并输入口令。")
+            self.status.setStyleSheet("color: #B77400;")
+        else:
+            self.status.setText("✕ 本机还没有私钥 — 第一次用点「生成私钥」；"
+                                "已经在别的机器上生成过就点「导入私钥」。")
+            self.status.setStyleSheet("color: %s;" % CRIT)
 
-    def _ask_passphrase(self, confirm):
+        self.unlock_button.setEnabled(exists and not loaded)
+        self.backup_button.setEnabled(exists)
+        self.generate_button.setText("重新生成私钥" if exists else "生成私钥")
+
+    def _ask_passphrase(self, title, confirm):
         text, ok = QtWidgets.QInputDialog.getText(
-            self, "私钥口令", "输入口令：", QtWidgets.QLineEdit.Password)
+            self, title, "输入口令：", QtWidgets.QLineEdit.Password)
         if not ok or not text:
             return None
         if confirm:
             again, ok = QtWidgets.QInputDialog.getText(
-                self, "私钥口令", "再输一次：", QtWidgets.QLineEdit.Password)
+                self, title, "再输一次：", QtWidgets.QLineEdit.Password)
             if not ok or again != text:
-                QtWidgets.QMessageBox.warning(self, "口令不一致", "两次输入不一样，没有生成。")
+                QtWidgets.QMessageBox.warning(self, "口令不一致", "两次输入不一样，没有保存。")
                 return None
         return text
 
+    def _adopt(self, key):
+        self.state["key"] = key
+        self.pub_view.setPlainText(keys.public_to_b64(key.public_key()))
+        self.refresh()
+        self.changed.emit()
+
+    # ── 生成 / 导入 / 解锁 / 备份 ─────────────────────────────────
     def generate(self):
-        directory = self.dir_edit.text().strip()
-        if not directory:
-            return
-        priv = os.path.join(directory, "admin_private.pem")
-        if os.path.exists(priv):
+        if stored_key_path().exists():
             answer = QtWidgets.QMessageBox.warning(
-                self, "已存在私钥",
-                "覆盖会让所有已签发的许可立即作废。确定要覆盖吗？",
+                self, "本机已有私钥",
+                "重新生成会覆盖现有私钥，所有已签发的许可立即作废，而且原私钥无法找回。\n\n"
+                "确定要覆盖吗？",
                 QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
                 QtWidgets.QMessageBox.No)
             if answer != QtWidgets.QMessageBox.Yes:
                 return
-        passphrase = self._ask_passphrase(confirm=True)
+        passphrase = self._ask_passphrase("给新私钥设一个口令", confirm=True)
         if not passphrase:
             return
 
-        os.makedirs(directory, exist_ok=True)
+        path = stored_key_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
         key = keys.generate()
-        keys.save_private(key, priv, passphrase)
-        keys.save_public(key.public_key(), os.path.join(directory, "admin_public.pem"))
-        self.state["key"] = key
-        self.state["passphrase"] = passphrase
-        self.pub_view.setPlainText(keys.public_to_b64(key.public_key()))
-        self.changed.emit()
-        QtWidgets.QMessageBox.information(
-            self, "已生成", "私钥：%s\n公钥：%s" % (priv, os.path.join(directory, "admin_public.pem")))
-
-    def load_existing(self):
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, "选择私钥", self.dir_edit.text(), "PEM (*.pem);;所有文件 (*)")
-        if not path:
+        try:
+            keys.save_private(key, str(path), passphrase)
+        except OSError as e:
+            QtWidgets.QMessageBox.warning(self, "保存失败", str(e))
             return
-        passphrase = self._ask_passphrase(confirm=False)
+        self._adopt(key)
+        QtWidgets.QMessageBox.information(
+            self, "已生成",
+            "私钥已生成并保存在本机。\n\n下面两件事现在就做：\n"
+            "1. 点「备份私钥」存一份到离线的地方\n"
+            "2. 复制下面的公钥，固定进用户端")
+
+    def import_key(self):
+        src, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "选择私钥文件", "", "PEM (*.pem);;所有文件 (*)")
+        if not src:
+            return
+        passphrase = self._ask_passphrase("这个私钥的口令", confirm=False)
         if not passphrase:
             return
         try:
-            key = keys.load_private(path, passphrase)
+            key = keys.load_private(src, passphrase)
         except (ValueError, TypeError):
-            QtWidgets.QMessageBox.warning(self, "打不开", "口令不对，或文件损坏。")
+            QtWidgets.QMessageBox.warning(self, "导入失败", "口令不对，或这不是一个私钥文件。")
             return
-        self.state["key"] = key
-        self.state["passphrase"] = passphrase
-        self.pub_view.setPlainText(keys.public_to_b64(key.public_key()))
-        self.changed.emit()
+        except OSError as e:
+            QtWidgets.QMessageBox.warning(self, "读不到文件", str(e))
+            return
+
+        if stored_key_path().exists():
+            answer = QtWidgets.QMessageBox.warning(
+                self, "本机已有私钥",
+                "导入会覆盖本机现有的私钥。确定吗？",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No)
+            if answer != QtWidgets.QMessageBox.Yes:
+                return
+
+        # 原样搬运加密后的 PEM，口令保持不变
+        path = stored_key_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copyfile(src, path)
+            os.chmod(path, 0o600)
+        except OSError as e:
+            QtWidgets.QMessageBox.warning(self, "保存失败", str(e))
+            return
+        self._adopt(key)
+        QtWidgets.QMessageBox.information(self, "已导入", "私钥已导入，口令不变。")
+
+    def unlock(self):
+        passphrase = self._ask_passphrase("私钥口令", confirm=False)
+        if not passphrase:
+            return
+        try:
+            key = keys.load_private(str(stored_key_path()), passphrase)
+        except (ValueError, TypeError):
+            QtWidgets.QMessageBox.warning(self, "解锁失败", "口令不对。")
+            return
+        self._adopt(key)
+
+    def backup(self):
+        dest, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "备份私钥到", "admin_private.pem", "PEM (*.pem)")
+        if not dest:
+            return
+        try:
+            shutil.copyfile(stored_key_path(), dest)
+        except OSError as e:
+            QtWidgets.QMessageBox.warning(self, "备份失败", str(e))
+            return
+        QtWidgets.QMessageBox.information(
+            self, "已备份",
+            "备份出来的还是加密的，恢复时要用同一个口令。\n口令本身没有备份——口令忘了，私钥就废了。")
+
+    # ── 公钥导出 ──────────────────────────────────────────────────
+    def copy_public(self):
+        text = self.pub_view.toPlainText()
+        if text:
+            QtWidgets.QApplication.clipboard().setText(text)
+
+    def export_public(self):
+        text = self.pub_view.toPlainText()
+        if not text:
+            return
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "另存公钥", "admin_public_key.txt", "文本 (*.txt)")
+        if path:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text + "\n")
 
 
 class IssueTab(QtWidgets.QWidget):

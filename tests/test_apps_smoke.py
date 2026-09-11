@@ -69,6 +69,87 @@ def test_管理端载入私钥后可以签发(app):
     assert w.issue_tab.issue_button.isEnabled()
 
 
+def test_管理端生成私钥的完整流程(app, tmp_path, monkeypatch):
+    """点「生成私钥」→ 落盘加密 pem → 显示公钥 → 签发按钮可用。"""
+    from apps.admin import main as admin
+    from licensing import keys
+
+    stored = tmp_path / "secrets" / "admin_private.pem"
+    monkeypatch.setattr(admin, "stored_key_path", lambda: stored)
+    monkeypatch.setattr(admin.KeyTab, "_ask_passphrase",
+                        lambda self, title, confirm: "口令abc")
+
+    w = admin.MainWindow()
+    assert "还没有私钥" in w.key_tab.status.text()
+    assert not w.key_tab.unlock_button.isEnabled()
+    assert not w.key_tab.backup_button.isEnabled()
+
+    w.key_tab.generate()
+
+    assert stored.exists()
+    assert stored.read_bytes().startswith(b"-----BEGIN ENCRYPTED PRIVATE KEY-----")
+    assert "已解锁" in w.key_tab.status.text()
+    assert w.key_tab.backup_button.isEnabled()
+    assert w.issue_tab.issue_button.isEnabled()
+
+    # 界面上显示的公钥必须和私钥真的配对
+    shown = w.key_tab.pub_view.toPlainText()
+    reloaded = keys.load_private(str(stored), "口令abc")
+    assert shown == keys.public_to_b64(reloaded.public_key())
+
+
+def test_管理端重启后需要解锁_口令错了不放行(app, tmp_path, monkeypatch):
+    from apps.admin import main as admin
+
+    stored = tmp_path / "secrets" / "admin_private.pem"
+    monkeypatch.setattr(admin, "stored_key_path", lambda: stored)
+    monkeypatch.setattr(admin.KeyTab, "_ask_passphrase",
+                        lambda self, title, confirm: "对口令")
+    first = admin.MainWindow()                   # 必须持引用：临时对象会被 GC，底层控件跟着析构
+    first.key_tab.generate()
+
+    w = admin.MainWindow()                       # 模拟重启
+    assert "还没解锁" in w.key_tab.status.text()
+    assert w.key_tab.unlock_button.isEnabled()
+    assert not w.issue_tab.issue_button.isEnabled()
+
+    monkeypatch.setattr(admin.KeyTab, "_ask_passphrase",
+                        lambda self, title, confirm: "错口令")
+    w.key_tab.unlock()
+    assert w.state["key"] is None                # 没放行
+
+    monkeypatch.setattr(admin.KeyTab, "_ask_passphrase",
+                        lambda self, title, confirm: "对口令")
+    w.key_tab.unlock()
+    assert w.state["key"] is not None
+    assert w.issue_tab.issue_button.isEnabled()
+
+
+def test_管理端导入别处生成的私钥(app, tmp_path, monkeypatch):
+    from apps.admin import main as admin
+    from licensing import keys
+
+    # 另一台机器上生成的私钥
+    other = tmp_path / "from_elsewhere.pem"
+    key = keys.generate()
+    keys.save_private(key, str(other), "老口令")
+
+    stored = tmp_path / "secrets" / "admin_private.pem"
+    monkeypatch.setattr(admin, "stored_key_path", lambda: stored)
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName",
+                        staticmethod(lambda *a, **k: (str(other), "")))
+    monkeypatch.setattr(admin.KeyTab, "_ask_passphrase",
+                        lambda self, title, confirm: "老口令")
+
+    w = admin.MainWindow()
+    w.key_tab.import_key()
+
+    assert stored.exists()
+    assert w.key_tab.pub_view.toPlainText() == keys.public_to_b64(key.public_key())
+    # 口令原样保留，不会被改掉
+    assert keys.load_private(str(stored), "老口令")
+
+
 def test_管理端签发前会校验必填项(app, no_modal_dialogs):
     from apps.admin.main import MainWindow
     from licensing import keys

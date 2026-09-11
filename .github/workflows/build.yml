@@ -15,6 +15,7 @@ jobs:
   test:
     name: 测试
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -36,13 +37,14 @@ jobs:
     name: 构建 ${{ matrix.label }}
     needs: test
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: macos-14        # Apple Silicon
             label: macos-arm64
-          - os: macos-13        # Intel
+          - os: macos-15-intel  # Intel（macos-13 已退役，会永远排队）
             label: macos-x64
           - os: windows-latest
             label: windows-x64
@@ -71,13 +73,17 @@ jobs:
         env:
           LICENSE_PUBLIC_KEY_B64: ${{ secrets.LICENSE_PUBLIC_KEY_B64 }}
         run: |
-          if [ -z "$LICENSE_PUBLIC_KEY_B64" ]; then
-            echo "::warning::仓库没有配置 Secret「LICENSE_PUBLIC_KEY_B64」，产出的是无法通过授权校验的开发版"
-            python tools/embed_pubkey.py --allow-missing
-            echo "embedded=false" >> "$GITHUB_OUTPUT"
-          else
+          # 优先级：Secret（用于轮换） > 源码里钉死的公钥 > 占位符（开发版）
+          if [ -n "$LICENSE_PUBLIC_KEY_B64" ]; then
             python tools/embed_pubkey.py --key "$LICENSE_PUBLIC_KEY_B64"
             echo "embedded=true" >> "$GITHUB_OUTPUT"
+          elif python tools/embed_pubkey.py --verify; then
+            echo "::notice::使用源码中钉死的公钥"
+            echo "embedded=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::源码里还是占位符，且没配 Secret —— 产出的用户端无法通过授权校验"
+            python tools/embed_pubkey.py --allow-missing
+            echo "embedded=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: 打包用户端
