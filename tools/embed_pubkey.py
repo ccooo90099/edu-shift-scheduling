@@ -14,7 +14,15 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from console import force_utf8   # noqa: E402
+try:
+    from console import force_utf8
+except ImportError:          # console.py 缺失时也不该崩 —— 它只是 6 行标准库
+    def force_utf8():
+        for _stream in (sys.stdout, sys.stderr):
+            try:
+                _stream.reconfigure(encoding="utf-8", errors="replace")
+            except (AttributeError, ValueError, OSError):
+                pass
 
 GATE = pathlib.Path(__file__).resolve().parent.parent / "licensing" / "gate.py"
 PLACEHOLDER = "REPLACE_AT_BUILD_TIME"

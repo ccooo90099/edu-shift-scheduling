@@ -15,7 +15,15 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from console import force_utf8   # noqa: E402
+try:
+    from console import force_utf8
+except ImportError:          # console.py 缺失时也不该崩 —— 它只是 6 行标准库
+    def force_utf8():
+        for _stream in (sys.stdout, sys.stderr):
+            try:
+                _stream.reconfigure(encoding="utf-8", errors="replace")
+            except (AttributeError, ValueError, OSError):
+                pass
 from engine import load_config   # noqa: E402
 from engine.data import load_schedule   # noqa: E402
 from engine.inputs import derive_instructors, derive_rooms, derive_teams   # noqa: E402
@@ -35,8 +43,9 @@ def main():
     ap.add_argument("--段次", help="只排某个段次，逗号分隔")
     ap.add_argument("--time-limit", type=int, default=120, help="每个子问题最多算多少秒")
     ap.add_argument("--workers", type=int, default=8)
-    ap.add_argument("--可去中心", default="不限", choices=["不限", "历史"],
-                    help="历史 = 老师只去他在原数据里去过的中心")
+    ap.add_argument("--可去中心", default="就近", choices=["就近", "历史", "不限"],
+                    help="就近 = 他去过的中心 + 同区域的其他中心（默认）；"
+                         "历史 = 只去去过的；不限 = 全市任选（候选太多，可能算不完）")
     args = ap.parse_args()
 
     cfg = load_config(args.config)

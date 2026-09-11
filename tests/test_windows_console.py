@@ -32,3 +32,27 @@ def test_中文输出在cp1252控制台下不崩(argv, expected, tmp_path):
     combined = result.stdout + result.stderr
     assert "UnicodeEncodeError" not in combined, combined[-800:]
     assert result.returncode == expected, combined[-800:]
+
+
+def test_缺了console模块也不该崩(tmp_path):
+    """console.py 只是 6 行标准库，不该因为它缺失就让整个工具跑不起来。
+
+    用 runpy 跑真实脚本（__file__ 才是对的），事先把 console 标成不可导入，
+    各入口应当退回内置实现继续跑，而不是 ModuleNotFoundError。
+    """
+    probe = tmp_path / "probe.py"
+    probe.write_text(
+        "import sys, runpy\n"
+        "sys.modules['console'] = None\n"        # 让 import console 抛 ImportError
+        "sys.argv = ['health_check.py', '--help']\n"
+        "runpy.run_path(%r, run_name='__main__')\n"
+        % os.path.join(ROOT, "tools", "health_check.py"),
+        encoding="utf-8")
+    env = dict(os.environ, PYTHONIOENCODING="cp1252")
+    result = subprocess.run([sys.executable, str(probe)], cwd=ROOT, env=env,
+                            capture_output=True, encoding="utf-8",
+                            errors="replace", timeout=120)
+    combined = result.stdout + result.stderr
+    assert "ModuleNotFoundError" not in combined, combined[-600:]
+    assert "UnicodeEncodeError" not in combined, combined[-600:]
+    assert "排班体检" in combined                 # 帮助文本正常打出来了

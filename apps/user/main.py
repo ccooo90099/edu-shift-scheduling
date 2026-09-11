@@ -222,7 +222,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 def main():
-    from console import force_utf8
+    try:
+        from console import force_utf8
+    except ImportError:      # 同上，缺了就地补一个
+        def force_utf8():
+            for stream in (sys.stdout, sys.stderr):
+                try:
+                    stream.reconfigure(encoding="utf-8", errors="replace")
+                except (AttributeError, ValueError, OSError):
+                    pass
     force_utf8()
 
     if "--selftest" in sys.argv:
