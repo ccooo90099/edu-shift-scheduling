@@ -245,20 +245,42 @@ class _GroupModel:
                 self.m.AddMaxEquality(u, [self.at[(inst.姓名, s, c)] for s in self.slots])
                 self.uses[(inst.姓名, c)] = u
 
-            # 赶不及的组合直接禁掉
+            # 赶不及的组合要禁掉。逐对写线性约束的话是 O(中心² × 时段²)，
+            # 18 个中心就是每人 5000 条、全体 27 万条 —— 求解器根本收敛不了。
+            # 改成表约束：把"这个时段在哪个中心"变成一个整数变量，
+            # 每对时段只挂一张允许组合表，一条顶几百条。
+            idle = 0
+            index = {c: i + 1 for i, c in enumerate(centers)}
+            where = {}
+            for s in self.slots:
+                v = self.m.NewIntVar(0, len(centers), "where_%s_%s" % (inst.姓名, s))
+                for c in centers:
+                    self.m.Add(v == index[c]).OnlyEnforceIf(self.at[(inst.姓名, s, c)])
+                    self.m.Add(v != index[c]).OnlyEnforceIf(self.at[(inst.姓名, s, c)].Not())
+                self.m.Add(v == idle).OnlyEnforceIf(self.busy[(inst.姓名, s)].Not())
+                where[s] = v
+
             for i, s1 in enumerate(self.slots):
                 for s2 in self.slots[i + 1:]:
                     gap = parse_slot(s2)[0] - parse_slot(s1)[1]
                     if gap < 0:
                         continue
+                    allowed = [(idle, idle)]
+                    allowed += [(idle, index[c]) for c in centers]
+                    allowed += [(index[c], idle) for c in centers]
                     for c1 in centers:
                         for c2 in centers:
-                            if c1 == c2:
-                                continue
-                            if not self.travel.acceptable(c1, c2, gap)[0]:
-                                self.m.Add(self.at[(inst.姓名, s1, c1)]
-                                           + self.at[(inst.姓名, s2, c2)] <= 1)
-                                banned += 1
+                            if c1 == c2 or self.travel.acceptable(c1, c2, gap)[0]:
+                                allowed.append((index[c1], index[c2]))
+                    self.m.AddAllowedAssignments([where[s1], where[s2]], allowed)
+                    banned += len(centers) ** 2 - len(allowed) + 2 * len(centers) + 1
+
+            # 单日最多去几个中心 —— 硬上限。除了贴合现实（原数据里 85% 的老师
+            # 当天只在一个中心），它还是最有效的剪枝：不设上限的话转场约束是
+            # O(老师 × 时段² × 中心²)，二十几万条，求解器根本收敛不了。
+            cap = self.cfg.get("指导员", {}).get("单日最多中心数")
+            if cap:
+                self.m.Add(sum(self.uses[(inst.姓名, c)] for c in centers) <= int(cap))
 
             # 只罚"多跑的那几个中心"。按"去过几个"算的话，只去一个也要扣分，
             # 等于给"启用一个老师"加成本，会把课压到少数人头上。

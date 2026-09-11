@@ -23,6 +23,7 @@ class Finding:
 @dataclass
 class Report:
     团队数: int = 0
+    未排上行数: int = 0
     中心数: int = 0
     校区数: int = 0
     指导员数: int = 0
@@ -206,6 +207,7 @@ def run(schedule_path, cfg, sheet=None, df=None):
     rep = Report(
         团队数=len(df), 中心数=df["中心"].nunique(), 校区数=df["校区"].nunique(),
         指导员数=df["主指导员"].nunique(),
+        未排上行数=df.attrs.get("未排上行数", 0),
         冲突口径="同时段 + " + " + ".join(cfg["冲突口径"]["分组字段"]))
 
     campus_of = dict(zip(df["中心"], df["校区"]))

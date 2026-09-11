@@ -24,6 +24,8 @@ def render(rep, name):
     add("%d 个团队 | %d 中心 / %d 校区 | %d 位指导员 | 口径：%s"
         % (rep.团队数, rep.中心数, rep.校区数, rep.指导员数, rep.冲突口径))
 
+    if rep.未排上行数:
+        add("  ⚠ 另有 %d 个团队没有时段（没排上），不参与下面的判定" % rep.未排上行数)
     add("\n硬约束")
     add("  H1 老师同时段撞车     %s" % ("✓ 0" if not rep.老师撞车 else "✕ %d 处" % rep.老师撞车))
     add("  H2 同撮学生撞产品     %s   （%d 对撞车，涉及 %d / %d 个团队，%.0f%%）"
