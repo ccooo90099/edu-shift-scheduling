@@ -222,6 +222,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 def main():
+    from console import force_utf8
+    force_utf8()
+
     if "--selftest" in sys.argv:
         from apps.common.selftest import run as selftest
         sys.exit(selftest("排班助手 · 用户端", needs_public_key=True))

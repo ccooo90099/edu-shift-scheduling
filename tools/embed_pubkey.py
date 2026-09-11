@@ -12,12 +12,17 @@ import pathlib
 import re
 import sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+
+from console import force_utf8   # noqa: E402
+
 GATE = pathlib.Path(__file__).resolve().parent.parent / "licensing" / "gate.py"
 PLACEHOLDER = "REPLACE_AT_BUILD_TIME"
 PATTERN = re.compile(r'^PUBLIC_KEY_B64 = ".*"$', re.MULTILINE)
 
 
 def main():
+    force_utf8()
     ap = argparse.ArgumentParser()
     ap.add_argument("--key", default="", help="Ed25519 公钥的 base64（32 字节裸公钥）")
     ap.add_argument("--allow-missing", action="store_true",

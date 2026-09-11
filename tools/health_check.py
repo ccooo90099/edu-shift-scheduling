@@ -12,6 +12,7 @@ from dataclasses import asdict
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from console import force_utf8   # noqa: E402
 from engine import load_config, run   # noqa: E402
 
 
@@ -60,6 +61,7 @@ def render(rep, name):
 
 
 def main():
+    force_utf8()
     ap = argparse.ArgumentParser(description="排班体检")
     ap.add_argument("schedule", help="排班明细 xlsx")
     ap.add_argument("--config", default="config/rules.yaml")

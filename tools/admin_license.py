@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from console import force_utf8   # noqa: E402
 from licensing import keys, license as lic   # noqa: E402
 
 ALL_FEATURES = ["health_check", "solver", "board", "export"]
@@ -89,6 +90,7 @@ def cmd_inspect(args):
 
 
 def main():
+    force_utf8()
     ap = argparse.ArgumentParser(description="管理端授权工具")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
