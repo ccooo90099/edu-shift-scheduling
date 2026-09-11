@@ -16,8 +16,7 @@ ENTRY_POINTS = [
     (["tools/admin_license.py", "--help"], 0),
     (["tools/health_check.py", "--help"], 0),
     (["apps/admin/main.py", "--selftest"], 0),
-    # 用户端开发版没嵌公钥，自检必然返回 1 —— 这里要的是"别因为编码崩"
-    (["apps/user/main.py", "--selftest"], 1),
+    (["apps/user/main.py", "--selftest"], 0),
 ]
 
 

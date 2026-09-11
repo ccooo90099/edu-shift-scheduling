@@ -11,7 +11,7 @@ from .fingerprint import machine_fingerprint
 from .keys import public_from_b64
 from .license import LicenseError, days_left, load, verify
 
-PUBLIC_KEY_B64 = "REPLACE_AT_BUILD_TIME"
+PUBLIC_KEY_B64 = "2TZKrGe+13zpR76T/pGV/C3Jw3iZLydYV10i5v+HqMY="
 
 APP_DIR_NAME = "EduShiftScheduling"
 

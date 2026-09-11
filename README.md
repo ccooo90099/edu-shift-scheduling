@@ -12,7 +12,7 @@
 | 排班体检引擎 | ✅ `engine/` + `tools/health_check.py` |
 | 授权（签发 / 验证） | ✅ `licensing/` |
 | 地图距离 / 驾车耗时 | ✅ `engine/mapapi.py` + 两个工具 |
-| 两端桌面应用 | ✅ `apps/user` `apps/admin` |
+| 两端桌面应用 | ✅ `apps/user` `apps/admin`（公钥已钉死） |
 | CI 三平台构建 | ✅ [`.github/workflows/build.yml`](.github/workflows/build.yml) |
 | **自动排班求解器** | ⬜ 下一步 |
 | 看板视图 | ⬜ |
@@ -31,7 +31,7 @@
 
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
-QT_QPA_PLATFORM=offscreen pytest          # 59 项
+QT_QPA_PLATFORM=offscreen pytest          # 64 项
 
 python apps/user/main.py                  # 用户端
 python apps/admin/main.py                 # 管理端
@@ -77,7 +77,7 @@ CI 在 macOS arm64 / macOS Intel / Windows x64 三个平台各打两个端。
 | `apps/` | 两端界面 |
 | `tools/` | 命令行：体检、签发许可、嵌公钥 |
 | `packaging/` | PyInstaller spec |
-| `tests/` | 59 项测试，含端到端授权链路与地图工具 |
+| `tests/` | 64 项测试，含端到端授权链路与地图工具 |
 
 ## 数据与密钥
 
