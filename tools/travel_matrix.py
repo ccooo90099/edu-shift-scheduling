@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """算出任意两个中心之间的驾车时间和里程，存成 config/travel.csv。
 
-    python tools/travel_matrix.py --key <高德Key> [--centers config/centers.csv]
-                                  [--out config/travel.csv] [--dry-run]
+    python tools/travel_matrix.py                         # 默认 osm，不需要 key
+    python tools/travel_matrix.py --provider amap --key <高德Key>
 
 跑一次就够。排班时只读这张表，完全离线，不需要网络也不需要 key。
-中心数 N 的话总共调用 N 次（每次一个终点、N-1 个起点）。
+osm 走 OSRM 的 table 接口，一次调用出整个矩阵；amap 是 N 次（每次一个终点）。
 """
 import argparse
 import csv
@@ -35,21 +35,32 @@ def load_centers(path):
     return centers
 
 
-def main():
-    force_utf8()
-    ap = argparse.ArgumentParser(description="生成中心之间的驾车时间/里程表")
-    ap.add_argument("--key", required=True, help="地图服务的 Key")
-    ap.add_argument("--provider", default="amap", help="默认 amap（高德）")
-    ap.add_argument("--centers", default="config/centers.csv")
-    ap.add_argument("--out", default="config/travel.csv")
-    ap.add_argument("--dry-run", action="store_true", help="只打印，不写文件")
-    args = ap.parse_args()
+def collect_matrix(client, centers):
+    """一次调用拿到整个矩阵（OSRM）。"""
+    names = [n for n, _, _ in centers]
+    try:
+        minutes, km = client.matrix([(x, y) for _, x, y in centers])
+    except MapError as e:
+        print("  ✕ %s" % e)
+        return [], len(names) * (len(names) - 1)
 
-    centers = load_centers(args.centers)
-    client = make(args.provider, args.key)
-    print("%d 个中心，共 %d 对，将调用 %d 次地图服务…\n"
-          % (len(centers), len(centers) * (len(centers) - 1), len(centers)))
+    pairs, failed = [], 0
+    for i, a in enumerate(names):
+        for j, b in enumerate(names):
+            if i == j:
+                continue
+            value, distance = minutes[i][j], km[i][j]
+            if value is None or distance is None:
+                failed += 1
+                continue
+            pairs.append({"from": a, "to": b, "minutes": "%.1f" % value,
+                          "km": "%.2f" % distance, "source": client.name})
+    print("  ✓ %d/%d 对" % (len(pairs), len(names) * (len(names) - 1)))
+    return pairs, failed
 
+
+def collect_pairwise(client, centers):
+    """一个终点一次调用（高德）。"""
     pairs, failed = [], 0
     for name, lon, lat in centers:
         others = [(n, x, y) for n, x, y in centers if n != name]
@@ -59,19 +70,44 @@ def main():
             print("  ✕ 到「%s」：%s" % (name, e))
             failed += len(others)
             continue
-
         ok = 0
         for (other, _, _), value in zip(others, results):
             if value is None:
                 failed += 1
                 continue
             minutes, km = value
-            pairs.append({"from": other, "to": name,
-                          "minutes": "%.1f" % minutes, "km": "%.2f" % km,
-                          "source": client.name})
+            pairs.append({"from": other, "to": name, "minutes": "%.1f" % minutes,
+                          "km": "%.2f" % km, "source": client.name})
             ok += 1
         print("  ✓ 到「%s」：%d/%d" % (name, ok, len(others)))
+    return pairs, failed
 
+
+def main():
+    force_utf8()
+    ap = argparse.ArgumentParser(description="生成中心之间的驾车时间/里程表")
+    ap.add_argument("--provider", default="osm",
+                    help="osm = 开源服务，不要 key（默认）；amap = 高德，要 key")
+    ap.add_argument("--key", help="amap 才需要")
+    ap.add_argument("--centers", default="config/centers.csv")
+    ap.add_argument("--out", default="config/travel.csv")
+    ap.add_argument("--dry-run", action="store_true", help="只打印，不写文件")
+    args = ap.parse_args()
+
+    # 先验 key，再读文件 —— 缺 key 就没必要白读一遍中心表
+    try:
+        client = make(args.provider, args.key)
+    except MapError as e:
+        sys.exit(str(e))
+    centers = load_centers(args.centers)
+
+    total = len(centers) * (len(centers) - 1)
+    one_shot = hasattr(client, "matrix")
+    print("%d 个中心，共 %d 对，用 %s（%s）…\n"
+          % (len(centers), total, client.name,
+             "一次调用出整个矩阵" if one_shot else "%d 次调用" % len(centers)))
+
+    pairs, failed = (collect_matrix if one_shot else collect_pairwise)(client, centers)
     print("\n算出 %d 对，失败 %d 对" % (len(pairs), failed))
     if not pairs:
         sys.exit("一对都没算出来，检查 Key 和网络。")

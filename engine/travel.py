@@ -13,6 +13,8 @@ import csv
 import math
 import os
 
+from .coords import to_wgs84
+
 FALLBACK_MINUTES = {"同校区": 15, "同区域": 40, "跨区域": 70}
 FALLBACK_KM = {"同校区": 1.0, "同区域": 8.0, "跨区域": 20.0}
 TRAVEL_FIELDS = ["from", "to", "minutes", "km", "source"]
@@ -40,7 +42,10 @@ def load_geo(cfg):
             for row in csv.DictReader(f):
                 lon, lat = (row.get("经度") or "").strip(), (row.get("纬度") or "").strip()
                 if lon and lat:
-                    coords[row["中心"].strip()] = (float(lon), float(lat))
+                    # 各家坐标系不同（osm 给 WGS-84、amap 给 GCJ-02，差 300–700 米），
+                    # 统一折算到 WGS-84 再存，混着用也不会算错
+                    coords[row["中心"].strip()] = to_wgs84(
+                        float(lon), float(lat), row.get("坐标系"))
 
     # 新键名「通行时间表」；「实测通行分钟」是旧名，继续认
     path = geo.get("通行时间表") or geo.get("实测通行分钟")

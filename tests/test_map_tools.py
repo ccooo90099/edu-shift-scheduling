@@ -18,10 +18,12 @@ POINTS = {"石厦科学": (114.045, 22.530), "百花科学": (114.058, 22.548),
 
 
 class FakeMap:
-    """按坐标编个确定的时间/里程，方便断言。"""
+    """逐点调用型（模拟高德）。按坐标编个确定的时间/里程，方便断言。"""
     name = "fake"
+    datum = "gcj02"
+    needs_key = False
 
-    def __init__(self, key, city="深圳", **kw):
+    def __init__(self, key=None, city="深圳", **kw):
         self.key = key
 
     def geocode(self, address):
@@ -38,9 +40,26 @@ class FakeMap:
         return out
 
 
+class FakeMatrixMap(FakeMap):
+    """一次出整个矩阵型（模拟 OSRM）。"""
+    name = "fakematrix"
+    datum = "wgs84"
+
+    def matrix(self, points):
+        size = len(points)
+        minutes = [[None] * size for _ in range(size)]
+        km = [[None] * size for _ in range(size)]
+        for i, (lon1, lat1) in enumerate(points):
+            for j, (lon2, lat2) in enumerate(points):
+                d = (abs(lon1 - lon2) + abs(lat1 - lat2)) * 100
+                minutes[i][j], km[i][j] = d * 3, d
+        return minutes, km
+
+
 @pytest.fixture
 def fake_provider(monkeypatch):
     monkeypatch.setitem(mapapi.PROVIDERS, "fake", FakeMap)
+    monkeypatch.setitem(mapapi.PROVIDERS, "fakematrix", FakeMatrixMap)
 
 
 @pytest.fixture
@@ -84,6 +103,7 @@ def test_补坐标_只动空的_查不到的报错但不影响其他行(centers_
     assert rows["翠竹科学"]["经度"] == "114.133"        # 原来就有的没被改写
     assert rows["查不到的中心"]["经度"] == ""            # 查不到的留空，不写垃圾
     assert "深圳石厦科学" in rows["石厦科学"]["地址"]     # 用过的地址写回来方便核对
+    assert rows["石厦科学"]["坐标系"] == "gcj02"          # 记下来源，排班时才知道要不要折算
 
 
 def test_生成通行时间表_并且排班读得到(centers_csv, fake_provider, monkeypatch, tmp_path):
@@ -127,3 +147,29 @@ def test_dry_run不写文件(centers_csv, fake_provider, monkeypatch, tmp_path):
         ["--key", "k", "--provider", "fake", "--centers", str(centers_csv),
          "--out", str(out), "--dry-run"], monkeypatch)
     assert not out.exists()
+
+
+def test_一次性矩阵路径_只调一次就出全部(centers_csv, fake_provider, monkeypatch, tmp_path):
+    """OSRM 那条路：providers 有 matrix() 时走一次调用，结果要和逐点调用一致。"""
+    run("tools.geocode_centers",
+        ["--provider", "fake", "--centers", str(centers_csv)], monkeypatch)
+
+    out = tmp_path / "travel.csv"
+    code = run("tools.travel_matrix",
+               ["--provider", "fakematrix", "--centers", str(centers_csv),
+                "--out", str(out)], monkeypatch)
+    assert code == 0
+
+    rows = read(out)
+    assert len(rows) == len(POINTS) * (len(POINTS) - 1)
+    assert all(r["source"] == "fakematrix" for r in rows)
+    # 对角线（自己到自己）不该出现在表里
+    assert all(r["from"] != r["to"] for r in rows)
+
+
+def test_amap缺key直接报错不往下跑(centers_csv, monkeypatch, tmp_path):
+    code = run("tools.travel_matrix",
+               ["--provider", "amap", "--centers", str(centers_csv),
+                "--out", str(tmp_path / "t.csv")], monkeypatch)
+    assert "key" in str(code)
+    assert not (tmp_path / "t.csv").exists()
