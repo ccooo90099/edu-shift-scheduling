@@ -1,47 +1,85 @@
-# edu-shift-scheduling · 排班小工具
+# edu-shift-scheduling · 排班助手
 
 把「人工在 Excel 里手工拖排班」变成「输入约束 → 自动生成排班表 + 看板 + 冲突报告」。
+跨平台桌面应用，分用户端和管理端两个产物。
 
-## 现在能用的
+## 现状
 
-**排班体检** —— 按配置的口径检查一份现有排班，输出违规清单和基线分。
+| 模块 | 状态 |
+|---|---|
+| 需求与约束梳理 | ✅ [`docs/需求理解.md`](docs/需求理解.md) |
+| 规则配置 schema | ✅ [`config/rules.example.yaml`](config/rules.example.yaml) |
+| 排班体检引擎 | ✅ `engine/` + `tools/health_check.py` |
+| 授权（签发 / 验证） | ✅ `licensing/` |
+| 两端桌面应用 | ✅ `apps/user` `apps/admin` |
+| CI 三平台构建 | ✅ [`.github/workflows/build.yml`](.github/workflows/build.yml) |
+| **自动排班求解器** | ⬜ 下一步 |
+| 看板视图 | ⬜ |
+
+## 两个端
+
+| | 用户端 `EduShift` | 管理端 `EduShiftAdmin` |
+|---|---|---|
+| 给谁 | 排课员 | 管理员本人 |
+| 密钥 | 只有公钥（构建时编译进去） | 持有私钥（口令加密存本机） |
+| 功能 | 导入排班 → 体检 → 导出违规清单 | 生成密钥、签发许可、查台账 |
+
+细节见 [`docs/桌面应用与授权.md`](docs/桌面应用与授权.md)，含授权机制能防什么、不能防什么。
+
+## 开发
 
 ```bash
-pip install -r requirements.txt
-cp config/rules.example.yaml config/rules.yaml      # 改规则只改这个文件
-cp config/centers.example.csv config/centers.csv    # 补上 30 个中心的经纬度
+pip install -r requirements.txt -r requirements-dev.txt
+QT_QPA_PLATFORM=offscreen pytest          # 29 项
 
-python tools/health_check.py 排班明细.xlsx \
-       --config config/rules.yaml --out 违规清单.csv
+python apps/user/main.py                  # 用户端
+python apps/admin/main.py                 # 管理端
+python apps/user/main.py --selftest       # 不开窗口，只验依赖和公钥
 ```
 
-输出长这样：
+命令行版体检（不需要界面）：
 
+```bash
+cp config/rules.example.yaml config/rules.yaml     # 改规则只改这个文件
+cp config/centers.example.csv config/centers.csv   # 补上 30 个中心的经纬度
+python tools/health_check.py 排班明细.xlsx --config config/rules.yaml --out 违规清单.csv
 ```
-硬约束
-  H1 老师同时段撞车     ✓ 0
-  H2 同撮学生撞产品     ✕   （316 对撞车，涉及 407 / 661 个团队，62%）
-  H3 教室同时段撞车     ✓ 0
 
-连堂（S1）
-  编程双语连堂         [硬]  中间不夹别的课 81/135（60%）；其中等待 ≤30 分钟的 51（38%）
+管理端也有命令行版：
 
-老师跑场（S2 / S3）
-  跨中心转场 96 次，赶路时间不够的 24 次
-  转场总里程约 985 km，平均每次 10.3 km
+```bash
+python tools/admin_license.py keygen --out-dir secrets
+python tools/admin_license.py issue --to "福田分区排课组" --days 365 \
+       --machines <机器指纹> --out 福田.lic
+python tools/admin_license.py inspect 福田.lic
 ```
+
+## 打包
+
+```bash
+python tools/embed_pubkey.py --key "<base64 公钥>"     # 只影响用户端
+pyinstaller --noconfirm --clean packaging/user.spec
+pyinstaller --noconfirm --clean packaging/admin.spec
+```
+
+CI 在 macOS arm64 / macOS Intel / Windows x64 三个平台各打两个端。
+需要在仓库 Secret 里配 `LICENSE_PUBLIC_KEY_B64`（**只放公钥**）。
 
 ## 目录
 
 | 路径 | 内容 |
 |---|---|
-| `docs/需求理解.md` | 需求文档：数据模型、硬/软约束、现状基线、待办 |
-| `config/rules.example.yaml` | 规则配置（冲突口径 / 连堂 / 地理 / 权重） |
-| `config/centers.example.csv` | 30 个中心的坐标表模板，**待补经纬度** |
-| `tools/health_check.py` | 排班体检 |
-| `analysis/explore_source.py` | 源表探查，用来摸新数据的底 |
+| `docs/` | 需求理解、桌面应用与授权 |
+| `config/` | 规则配置与中心坐标表的模板 |
+| `engine/` | 排班引擎：时段运算、通行时间、体检 |
+| `licensing/` | 密钥、许可签发与校验、机器指纹 |
+| `apps/` | 两端界面 |
+| `tools/` | 命令行：体检、签发许可、嵌公钥 |
+| `packaging/` | PyInstaller spec |
+| `tests/` | 29 项测试，含端到端授权链路 |
 
-## 数据
+## 数据与密钥
 
-源表含真实姓名与门店信息，不入库。`config/rules.yaml`、`config/centers.csv`、
-`config/travel_minutes.csv` 同样已在 `.gitignore` 里——仓库里只留 `.example` 模板。
+源表含真实姓名与门店信息，不入库。以下均在 `.gitignore`：
+`config/rules.yaml`、`config/centers.csv`、`config/travel_minutes.csv`、
+`secrets/`、`*.pem`、`*.lic`、`dist/`、`build/`。

@@ -11,3 +11,10 @@ venv/
 config/rules.yaml
 config/centers.csv
 config/travel_minutes.csv
+
+# 构建产物与密钥
+dist/
+build/
+secrets/
+*.pem
+*.lic
