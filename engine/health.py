@@ -37,6 +37,8 @@ class Report:
     转场次数: int = 0
     赶不及次数: int = 0
     转场里程: float = 0.0
+    转场按来源: dict = field(default_factory=dict)
+    判定方式: str = ""
     空档段数: int = 0
     有空档人次: int = 0
     多节课人次: int = 0
@@ -154,7 +156,7 @@ def _check_adjacency(df, cfg, rep):
 
 
 def _check_transfers(df, travel, cfg, rep):
-    hard = (cfg.get("地理", {}) or {}).get("转场硬上限_分钟")
+    level = "H4" if (cfg.get("地理", {}) or {}).get("违规级别") == "硬" else "S3"
     gap_count = make_gap_counter(cfg["时段"])
     gaps = []
 
@@ -168,19 +170,19 @@ def _check_transfers(df, travel, cfg, rep):
             if prev["中心"] == cur["中心"]:
                 continue
             rep.转场次数 += 1
-            need = travel.minutes(prev["中心"], cur["中心"])
+            a, b = prev["中心"], cur["中心"]
             have = cur["_start"] - prev["_end"]
-            km = travel.km(prev["中心"], cur["中心"])
-            if km:
-                rep.转场里程 += km
-            if have < need:
+            rep.转场里程 += travel.km(a, b)
+            source = travel.source(a, b)
+            rep.转场按来源[source] = rep.转场按来源.get(source, 0) + 1
+
+            ok, reason = travel.acceptable(a, b, have)
+            if not ok:
                 rep.赶不及次数 += 1
-                level = "H4-地理" if hard and have < hard else "S3"
                 rep.findings.append(Finding(
-                    level, "赶路时间不够（有 %d 分钟，需要约 %d 分钟）" % (have, need),
-                    "%s %s %s" % key,
-                    "%s %s → %s %s（%s）" % (prev["中心"], prev[TIME_COL], cur["中心"],
-                                            cur[TIME_COL], travel.label(prev["中心"], cur["中心"]))))
+                    level, reason, "%s %s %s" % key,
+                    "%s %s → %s %s（%s）" % (a, prev[TIME_COL], b, cur[TIME_COL],
+                                            travel.label(a, b))))
 
         slots = sorted({(r["_start"], r["_end"]) for r in rows})
         if len(slots) > 1:
@@ -212,6 +214,7 @@ def run(schedule_path, cfg, sheet=None, df=None):
     _check_adjacency(df, cfg, rep)
     _check_transfers(df, travel, cfg, rep)
     rep.用了粗判 = travel.used_fallback
+    rep.判定方式 = travel.mode
 
     load = df.groupby("主指导员").size()
     rep.人均团队 = float(load.mean())

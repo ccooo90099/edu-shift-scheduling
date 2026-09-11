@@ -43,13 +43,17 @@ def render(rep, name):
     add("\n老师跑场（S2 / S3）")
     add("  当日排班 %d 人次，其中 %d 人次只在一个中心（%.0f%%）"
         % (rep.当日人次, rep.单中心人次, 100 * rep.单中心人次 / max(rep.当日人次, 1)))
-    add("  跨中心转场 %d 次，赶路时间不够的 %d 次" % (rep.转场次数, rep.赶不及次数))
+    add("  跨中心转场 %d 次，按「%s」判定不可接受的 %d 次"
+        % (rep.转场次数, rep.判定方式, rep.赶不及次数))
     if rep.转场里程:
         add("  转场总里程约 %.0f km，平均每次 %.1f km"
             % (rep.转场里程, rep.转场里程 / max(rep.转场次数, 1)))
+    if rep.转场按来源:
+        add("  数据来源：%s" % "，".join(
+            "%s %d 次" % (k, v) for k, v in sorted(rep.转场按来源.items())))
     if rep.用了粗判:
-        add("  ⚠ 部分中心缺经纬度，已退回「同校区/同区域/跨区域」粗判。")
-        add("    补上坐标表的经度/纬度两列即可按真实距离计算。")
+        add("  ⚠ 部分中心没有坐标，这些只能按「同校区/同区域/跨区域」粗判。")
+        add("    跑 tools/geocode_centers.py 补坐标，再跑 tools/travel_matrix.py 出真实驾车时间。")
     add("  课表空档合计 %d 段，有空档的 %d/%d 人次"
         % (rep.空档段数, rep.有空档人次, rep.多节课人次))
 

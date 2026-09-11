@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""算出任意两个中心之间的驾车时间和里程，存成 config/travel.csv。
+
+    python tools/travel_matrix.py --key <高德Key> [--centers config/centers.csv]
+                                  [--out config/travel.csv] [--dry-run]
+
+跑一次就够。排班时只读这张表，完全离线，不需要网络也不需要 key。
+中心数 N 的话总共调用 N 次（每次一个终点、N-1 个起点）。
+"""
+import argparse
+import csv
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from console import force_utf8   # noqa: E402
+from engine.mapapi import MapError, make   # noqa: E402
+from engine.travel import TRAVEL_FIELDS   # noqa: E402
+
+
+def load_centers(path):
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.DictReader(f))
+    centers = []
+    for row in rows:
+        lon, lat = (row.get("经度") or "").strip(), (row.get("纬度") or "").strip()
+        if lon and lat:
+            centers.append((row["中心"].strip(), float(lon), float(lat)))
+    if len(centers) < 2:
+        sys.exit("有坐标的中心不足 2 个。先跑 tools/geocode_centers.py 把经纬度补齐。")
+    missing = len(rows) - len(centers)
+    if missing:
+        print("⚠ 有 %d 个中心还没有坐标，本次跳过。" % missing)
+    return centers
+
+
+def main():
+    force_utf8()
+    ap = argparse.ArgumentParser(description="生成中心之间的驾车时间/里程表")
+    ap.add_argument("--key", required=True, help="地图服务的 Key")
+    ap.add_argument("--provider", default="amap", help="默认 amap（高德）")
+    ap.add_argument("--centers", default="config/centers.csv")
+    ap.add_argument("--out", default="config/travel.csv")
+    ap.add_argument("--dry-run", action="store_true", help="只打印，不写文件")
+    args = ap.parse_args()
+
+    centers = load_centers(args.centers)
+    client = make(args.provider, args.key)
+    print("%d 个中心，共 %d 对，将调用 %d 次地图服务…\n"
+          % (len(centers), len(centers) * (len(centers) - 1), len(centers)))
+
+    pairs, failed = [], 0
+    for name, lon, lat in centers:
+        others = [(n, x, y) for n, x, y in centers if n != name]
+        try:
+            results = client.driving([(x, y) for _, x, y in others], (lon, lat))
+        except MapError as e:
+            print("  ✕ 到「%s」：%s" % (name, e))
+            failed += len(others)
+            continue
+
+        ok = 0
+        for (other, _, _), value in zip(others, results):
+            if value is None:
+                failed += 1
+                continue
+            minutes, km = value
+            pairs.append({"from": other, "to": name,
+                          "minutes": "%.1f" % minutes, "km": "%.2f" % km,
+                          "source": client.name})
+            ok += 1
+        print("  ✓ 到「%s」：%d/%d" % (name, ok, len(others)))
+
+    print("\n算出 %d 对，失败 %d 对" % (len(pairs), failed))
+    if not pairs:
+        sys.exit("一对都没算出来，检查 Key 和网络。")
+
+    if args.dry_run:
+        print("--dry-run，没有写文件")
+        return
+    with open(args.out, "w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=TRAVEL_FIELDS)
+        writer.writeheader()
+        writer.writerows(pairs)
+    print("已写入 %s —— 排班从此不用联网。" % args.out)
+
+
+if __name__ == "__main__":
+    main()
