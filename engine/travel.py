@@ -93,9 +93,12 @@ class Travel:
 
     # ── 基础量 ────────────────────────────────────────────────────
     def tier(self, a, b):
-        if self.campus_of.get(a) == self.campus_of.get(b):
+        if self.campus_of.get(a) and self.campus_of.get(a) == self.campus_of.get(b):
             return "同校区"
-        if self.region_of.get(a) == self.region_of.get(b):
+        # 区域不明的一律按跨区域算。两个 None 相等就当成"同区域"的话，
+        # 缺数据反而会放宽约束 —— 兜底应该保守，不该更松。
+        ra, rb = self.region_of.get(a), self.region_of.get(b)
+        if ra and rb and ra == rb:
             return "同区域"
         return "跨区域"
 

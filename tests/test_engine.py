@@ -80,3 +80,25 @@ def test_只有两个时段时也能推():
 def test_单个时段推不出跳变但不报错():
     limit, waits, why = derive_adjacency_limit(["09:00-10:00"])
     assert limit is None and waits == [] and "推不出" in why
+
+
+# ── 两个被重叠时段揪出来的 bug ──────────────────────────────────
+
+def test_区域不明时按跨区域算_兜底要保守():
+    """两个 None 相等就当"同区域"的话，缺数据反而放宽约束。"""
+    from engine.travel import Travel
+    cfg = {"地理": {"判定方式": "时间", "时间": {"安全余量_分钟": 0}}}
+    campus = {"甲": "甲", "乙": "乙"}
+    t = Travel(cfg, {}, {}, campus, {})            # region_of 是空的
+    assert t.tier("甲", "乙") == "跨区域"
+    assert t.minutes("甲", "乙") == 70             # 不是同区域的 40
+
+    有区域 = Travel(cfg, {}, {}, campus, {"甲": "福田", "乙": "福田"})
+    assert 有区域.tier("甲", "乙") == "同区域"
+
+
+def test_同校区判定不受空值影响():
+    from engine.travel import Travel
+    cfg = {"地理": {}}
+    t = Travel(cfg, {}, {}, {}, {})                # campus_of 也是空的
+    assert t.tier("甲", "乙") == "跨区域"          # 不是"同校区"

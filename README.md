@@ -14,8 +14,8 @@
 | 地图距离 / 驾车耗时 | ✅ `engine/mapapi.py`，默认免 key |
 | 两端桌面应用 | ✅ `apps/user` `apps/admin`（公钥已钉死） |
 | CI 三平台构建 | ✅ [`.github/workflows/build.yml`](.github/workflows/build.yml) |
-| **自动排班求解器** | ⬜ 下一步 |
-| 看板视图 | ⬜ |
+| **自动排班求解器** | ✅ `engine/solver.py`（CP-SAT） |
+| 看板视图 | ✅ 输出 xlsx 自带 |
 
 ## 两个端
 
@@ -31,12 +31,26 @@
 
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
-QT_QPA_PLATFORM=offscreen pytest          # 81 项
+QT_QPA_PLATFORM=offscreen pytest          # 95 项
 
 python apps/user/main.py                  # 用户端
 python apps/admin/main.py                 # 管理端
 python apps/user/main.py --selftest       # 不开窗口，只验依赖和公钥
 ```
+
+**自动排班**：
+
+```bash
+# 从零重排：拿现有明细当待排清单，时段和主指导员作废重新定
+python tools/schedule.py 排班明细.xlsx --config config/rules.yaml --out 新排班.xlsx
+
+# 修复模式：在原排班上做最小改动（期中调课用）
+python tools/schedule.py 排班明细.xlsx --mode repair --out 修复后.xlsx
+```
+
+输出一个 Excel：总览 / 排班明细 / 看板 / 老师课表 / 问题清单。
+明细页的列名和源表一致，**可以直接喂回体检工具**——排班和体检共用同一套
+配置和权重，所以「比原来好多少」是同一把尺子量出来的。
 
 命令行版体检（不需要界面）：
 
@@ -72,12 +86,12 @@ CI 在 macOS arm64 / macOS Intel / Windows x64 三个平台各打两个端。
 |---|---|
 | `docs/` | 需求理解、桌面应用与授权 |
 | `config/` | 规则配置与中心坐标表的模板 |
-| `engine/` | 排班引擎：时段运算、通行时间、体检 |
+| `engine/` | 排班引擎：时段运算、通行时间、体检、CP-SAT 求解器、Excel 输出 |
 | `licensing/` | 密钥、许可签发与校验、机器指纹 |
 | `apps/` | 两端界面 |
 | `tools/` | 命令行：体检、签发许可、嵌公钥 |
 | `packaging/` | PyInstaller spec |
-| `tests/` | 81 项测试，含端到端授权链路与地图工具 |
+| `tests/` | 95 项测试，含端到端授权链路与地图工具 |
 
 ## 数据与密钥
 
