@@ -27,8 +27,8 @@ AMAP_DISTANCE = "https://restapi.amap.com/v3/distance"
 NOMINATIM_SEARCH = "https://nominatim.openstreetmap.org/search"
 OSRM_TABLE = "https://router.project-osrm.org/table/v1/driving"
 
-# Nominatim 的使用条款要求带一个能识别来源的 UA
-USER_AGENT = "edu-shift-scheduling/0.1 (排班工具，一次性批量地理编码)"
+# Nominatim 要求可识别的 UA；HTTP 请求头只能使用 Latin-1，中文会在发送前报错。
+USER_AGENT = "edu-shift-scheduling/0.1 (one-time batch geocoding)"
 
 
 class MapError(Exception):
@@ -135,17 +135,21 @@ class OSM:
             time.sleep(self.pause)
 
     def geocode(self, address):
+        self.last_geocode = None
         data = self.fetch(NOMINATIM_SEARCH, {
             "q": address, "format": "json", "limit": 1,
             "countrycodes": "cn", "accept-language": "zh-CN",
+            "addressdetails": 1,
         })
         self._wait()
         if not isinstance(data, list) or not data:
             return None
         try:
-            return float(data[0]["lon"]), float(data[0]["lat"])
+            point = float(data[0]["lon"]), float(data[0]["lat"])
         except (KeyError, TypeError, ValueError):
             return None
+        self.last_geocode = data[0]
+        return point
 
     def matrix(self, points):
         """一次算出所有两两组合。返回 (分钟矩阵, 公里矩阵)，算不出来的格子是 None。"""

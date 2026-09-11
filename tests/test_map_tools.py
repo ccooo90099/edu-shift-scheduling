@@ -13,6 +13,23 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from engine import mapapi   # noqa: E402
 from engine.travel import Travel, load_geo   # noqa: E402
 
+
+def test_地图请求头可以通过真实HTTP编码(monkeypatch):
+    """覆盖假 provider 绕过的请求层，且不连接公网。"""
+    import http.client
+    import io
+
+    def urlopen(request, timeout):
+        connection = http.client.HTTPConnection("localhost")
+        connection.putrequest("GET", request.selector)
+        for name, value in request.header_items():
+            connection.putheader(name, value)
+        return io.BytesIO(b'[{"lon": "114.045", "lat": "22.530"}]')
+
+    monkeypatch.setattr(mapapi.urllib.request, "urlopen", urlopen)
+    assert mapapi.OSM(pause=0).geocode("深圳石厦") == (114.045, 22.530)
+
+
 POINTS = {"石厦科学": (114.045, 22.530), "百花科学": (114.058, 22.548),
           "翠竹科学": (114.133, 22.560)}
 
@@ -300,3 +317,37 @@ def test_有地址时优先用地址(tmp_path, monkeypatch):
     run("tools.geocode_centers",
         ["--provider", "campusonly", "--centers", str(path)], monkeypatch)
     assert read(path)[0]["定位依据"] == "深圳市福田区百花二路石厦"
+
+
+@pytest.mark.parametrize("name,display,expected", [
+    ("石厦", "石厦, 福田区, 深圳市", True),
+    ("石厦小学", "石厦小学, 福田区, 深圳市", True),
+    ("南山科学馆", "南山科学馆, 南山区, 深圳市", False),
+    ("科学馆", "科学馆, 福田区, 深圳市", False),
+    ("石厦", "石厦, 南山区, 深圳市", False),
+    ("", "福田区, 深圳市", False),
+])
+def test_osm拒绝市内错区或不相干地名(name, display, expected):
+    from tools.geocode_centers import osm_match
+    row = {"中心": "石厦科学", "校区": "石厦", "区域": "福田区"}
+    assert osm_match(row, "深圳石厦科学", {"name": name, "display_name": display}) == expected
+
+
+def test_osm误匹配后继续查校区并保存返回名称(tmp_path, monkeypatch):
+    class MisleadingOSM(mapapi.OSM):
+        def __init__(self, *args, **kwargs):
+            def fetch(url, params):
+                wrong = params["q"].endswith("科学")
+                return [{"lon": "114.045", "lat": "22.530",
+                         "name": "科学馆" if wrong else "石厦",
+                         "display_name": "科学馆, 福田区, 深圳市" if wrong else "石厦, 福田区, 深圳市"}]
+            super().__init__(pause=0, fetch=fetch)
+
+    monkeypatch.setitem(mapapi.PROVIDERS, "osm", MisleadingOSM)
+    path = tmp_path / "centers.csv"
+    path.write_text("中心,校区,区域,经度,纬度\n石厦科学,石厦,福田区,,\n", encoding="utf-8-sig")
+    assert run("tools.geocode_centers", ["--centers", str(path)], monkeypatch) == 0
+    row = read(path)[0]
+    assert row["定位依据"] == "深圳福田区石厦"
+    assert row["地图名称"] == "石厦"
+    assert row["定位精度"] == "地名参考点（未核门店）"

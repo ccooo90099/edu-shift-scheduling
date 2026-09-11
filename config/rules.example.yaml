@@ -79,8 +79,9 @@
 #   ③ 同校区/同区域/跨区域  连坐标都没有时的兜底
 #
 # 准备数据（各跑一次，之后排班完全离线、不需要网络和 key）：
-#   python tools/geocode_centers.py --key <高德Key>    # 地址 → 经纬度
-#   python tools/travel_matrix.py   --key <高德Key>    # 两两驾车时间/里程
+#   python tools/geocode_centers.py    # 默认 OSM，无需 key；核对参考点后再算路线
+#   python tools/travel_matrix.py      # 两两驾车路线估计，不含实时路况
+#   高德需显式加 --provider amap --key <高德Key>
 地理:
   中心坐标表: config/centers.csv
   通行时间表: config/travel.csv

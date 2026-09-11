@@ -17,12 +17,12 @@
 同校区的几个中心（百花科学/百花文学是同一个校区的两栋楼）会共用查询结果，
 少调用几次，也保证它们坐标一致。命中的问法写进「定位依据」列，方便你核对。
 
-查出来的点会做一次范围校验：落到城市范围外的直接丢弃 —— 地图服务对模糊
-查询经常返回外省的同名地点，混进来会把全城距离算歪，而且不会报错。
+查出来的点会做范围校验；OSM 还会核对返回地名和行政区，防止忽略查询词后
+命中市内另一所学校或外地同名地点。返回名称和完整地图地址会写回供复核。
 
 坐标系也会记下来：osm 给 WGS-84、amap 给 GCJ-02，差 300–700 米，
 排班时按这一列统一折算，所以两种混着用不会算错。
-地址列为空时用「城市 + 中心名」去查，查出来的地址会一并写回，方便你核对。
+地址列为空时尝试中心名、校区名；结果仅作地名参考点，未认证门店位置。
 跑一次就够——结果是离线的，排班时不需要网络也不需要 key。
 """
 import argparse
@@ -43,11 +43,32 @@ except ImportError:          # console.py 缺失时也不该崩 —— 它只是
                 pass
 from engine.mapapi import MapError, make   # noqa: E402
 
-FIELDS = ["中心", "校区", "区域", "地址", "经度", "纬度", "坐标系", "定位依据"]
+FIELDS = ["中心", "校区", "区域", "地址", "经度", "纬度", "坐标系", "定位依据",
+          "地图名称", "地图地址", "定位精度"]
 
 # 深圳市域大致范围。查出来的点落在外面就是查错了，宁可留空也不要写错的坐标
 CITY_BOUNDS = {"深圳": (113.70, 114.70, 22.35, 22.95)}
 DEFAULT_BOUNDS = (73.0, 136.0, 3.0, 54.0)      # 兜底：国境范围
+REGION_DISTRICTS = {"宝安南山区": ("宝安区", "南山区"),
+                    "罗湖龙岗区": ("罗湖区", "龙岗区"),
+                    "福田区": ("福田区",), "龙华区": ("龙华区",)}
+
+
+def osm_match(row, query, result):
+    """Nominatim 会忽略部分查询词；在深圳也可能命中完全无关的学校。
+
+    地名匹配只说明可作参考点，不能认证门店地址。校区简称可包含地图名称，
+    如「红山站」对应「红山」；行政区必须与业务分区对应。
+    """
+    display = result.get("display_name") or ""
+    districts = REGION_DISTRICTS.get((row.get("区域") or "").strip(), ())
+    if districts and not any(d in display.split(", ") for d in districts):
+        return False
+    if query == (row.get("地址") or "").strip():
+        return True
+    campus = (row.get("校区") or row.get("中心") or "").strip().casefold()
+    name = (result.get("name") or "").strip().casefold()
+    return len(name) >= 2 and len(campus) >= 2 and (campus in name or name in campus)
 
 
 def in_bounds(lon, lat, city):
@@ -113,6 +134,7 @@ def main():
     cache = {}          # 问法 → 结果，同校区的中心直接复用，少调几次
     done = skipped = failed = 0
     rejected = []
+    mismatched = []
 
     for row in rows:
         name = (row.get("中心") or "").strip()
@@ -124,10 +146,11 @@ def main():
         hit = None
         for query in queries(row, args.city):
             if query in cache:
-                found = cache[query]
+                found, metadata = cache[query]
             else:
                 try:
                     found = client.geocode(query)
+                    metadata = getattr(client, "last_geocode", None)
                 except MapError as e:
                     print("  ✕ %-14s %s" % (name, e))
                     found = None
@@ -135,9 +158,12 @@ def main():
                 if found and not in_bounds(found[0], found[1], args.city):
                     rejected.append((name, query, found))
                     found = None
-                cache[query] = found
+                cache[query] = (found, metadata)
+            if found and client.name == "osm" and not osm_match(row, query, metadata or {}):
+                mismatched.append((name, query, metadata or {}))
+                continue
             if found:
-                hit = (query, found)
+                hit = (query, found, metadata)
                 break
 
         if not hit:
@@ -145,10 +171,14 @@ def main():
             failed += 1
             continue
 
-        query, (lon, lat) = hit
+        query, (lon, lat), metadata = hit
         row["经度"], row["纬度"] = "%.6f" % lon, "%.6f" % lat
         row["坐标系"] = client.datum
         row["定位依据"] = query
+        if client.name == "osm":
+            row["地图名称"] = metadata.get("name", "")
+            row["地图地址"] = metadata.get("display_name", "")
+            row["定位精度"] = "地名参考点（未核门店）"
         print("  ✓ %-14s %.6f, %.6f   ← %s" % (name, lon, lat, query))
         done += 1
 
@@ -158,6 +188,10 @@ def main():
         print("\n丢弃了 %d 个落在%s范围外的结果（大概率是外地同名地点）：" % (len(rejected), args.city))
         for name, query, (lon, lat) in rejected:
             print("  %-14s 「%s」→ %.4f, %.4f" % (name, query, lon, lat))
+    if mismatched:
+        print("\n丢弃了 %d 个地名或行政区不匹配的结果：" % len(mismatched))
+        for name, query, result in mismatched:
+            print("  %s「%s」→ %s" % (name, query, result.get("display_name", "无名称")))
     if args.dry_run:
         print("--dry-run，没有写文件")
     elif done:
