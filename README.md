@@ -31,7 +31,7 @@
 
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
-QT_QPA_PLATFORM=offscreen pytest          # 77 项
+QT_QPA_PLATFORM=offscreen pytest          # 81 项
 
 python apps/user/main.py                  # 用户端
 python apps/admin/main.py                 # 管理端
@@ -77,7 +77,7 @@ CI 在 macOS arm64 / macOS Intel / Windows x64 三个平台各打两个端。
 | `apps/` | 两端界面 |
 | `tools/` | 命令行：体检、签发许可、嵌公钥 |
 | `packaging/` | PyInstaller spec |
-| `tests/` | 77 项测试，含端到端授权链路与地图工具 |
+| `tests/` | 81 项测试，含端到端授权链路与地图工具 |
 
 ## 数据与密钥
 

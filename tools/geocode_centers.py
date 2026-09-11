@@ -5,8 +5,23 @@
     python tools/geocode_centers.py --provider amap --key <高德Key>   # 要更高精度时
 
 只补「经度/纬度」两列为空的行；已经有坐标的默认不动（要重算加 --overwrite）。
-每行会记下「坐标系」，因为 osm 给 WGS-84、amap 给 GCJ-02，差 300–700 米；
-排班时会按这一列统一折算，所以两种混着用也不会算错。
+
+"百花科学""石厦文学"是内部中心名，地图上没有这个 POI，直接查必然落空。
+所以每个中心按由细到粗试几种问法，命中就停：
+
+    ① 地址列填的详细地址
+    ② 城市 + 中心名          深圳百花科学
+    ③ 城市 + 区域 + 校区名    深圳福田区百花
+    ④ 城市 + 校区名          深圳百花        ← 校区名通常是真实地名，命中率最高
+
+同校区的几个中心（百花科学/百花文学是同一个校区的两栋楼）会共用查询结果，
+少调用几次，也保证它们坐标一致。命中的问法写进「定位依据」列，方便你核对。
+
+查出来的点会做一次范围校验：落到城市范围外的直接丢弃 —— 地图服务对模糊
+查询经常返回外省的同名地点，混进来会把全城距离算歪，而且不会报错。
+
+坐标系也会记下来：osm 给 WGS-84、amap 给 GCJ-02，差 300–700 米，
+排班时按这一列统一折算，所以两种混着用不会算错。
 地址列为空时用「城市 + 中心名」去查，查出来的地址会一并写回，方便你核对。
 跑一次就够——结果是离线的，排班时不需要网络也不需要 key。
 """
@@ -20,7 +35,33 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from console import force_utf8   # noqa: E402
 from engine.mapapi import MapError, make   # noqa: E402
 
-FIELDS = ["中心", "校区", "区域", "地址", "经度", "纬度", "坐标系"]
+FIELDS = ["中心", "校区", "区域", "地址", "经度", "纬度", "坐标系", "定位依据"]
+
+# 深圳市域大致范围。查出来的点落在外面就是查错了，宁可留空也不要写错的坐标
+CITY_BOUNDS = {"深圳": (113.70, 114.70, 22.35, 22.95)}
+DEFAULT_BOUNDS = (73.0, 136.0, 3.0, 54.0)      # 兜底：国境范围
+
+
+def in_bounds(lon, lat, city):
+    west, east, south, north = CITY_BOUNDS.get(city, DEFAULT_BOUNDS)
+    return west <= lon <= east and south <= lat <= north
+
+
+def queries(row, city):
+    """由细到粗的几种问法，去重后按顺序试。"""
+    name = (row.get("中心") or "").strip()
+    campus = (row.get("校区") or "").strip()
+    region = (row.get("区域") or "").strip()
+    address = (row.get("地址") or "").strip()
+
+    out = []
+    for q in (address,
+              "%s%s" % (city, name) if name else "",
+              "%s%s%s" % (city, region, campus) if campus and region else "",
+              "%s%s" % (city, campus) if campus else ""):
+        if q and q not in out:
+            out.append(q)
+    return out
 
 
 def load(path):
@@ -61,7 +102,10 @@ def main():
         sys.exit(str(e))
     print("用 %s，坐标系 %s\n" % (client.name, client.datum))
 
+    cache = {}          # 问法 → 结果，同校区的中心直接复用，少调几次
     done = skipped = failed = 0
+    rejected = []
+
     for row in rows:
         name = (row.get("中心") or "").strip()
         has_coords = (row.get("经度") or "").strip() and (row.get("纬度") or "").strip()
@@ -69,28 +113,43 @@ def main():
             skipped += 1
             continue
 
-        address = (row.get("地址") or "").strip() or "%s%s" % (args.city, name)
-        try:
-            found = client.geocode(address)
-        except MapError as e:
-            print("  ✕ %-14s %s" % (name, e))
+        hit = None
+        for query in queries(row, args.city):
+            if query in cache:
+                found = cache[query]
+            else:
+                try:
+                    found = client.geocode(query)
+                except MapError as e:
+                    print("  ✕ %-14s %s" % (name, e))
+                    found = None
+                    break
+                if found and not in_bounds(found[0], found[1], args.city):
+                    rejected.append((name, query, found))
+                    found = None
+                cache[query] = found
+            if found:
+                hit = (query, found)
+                break
+
+        if not hit:
+            print("  ✕ %-14s 几种问法都没查到" % name)
             failed += 1
             continue
 
-        if not found:
-            print("  ✕ %-14s 查不到「%s」——请在地址列填详细地址后重跑" % (name, address))
-            failed += 1
-            continue
-
-        lon, lat = found
+        query, (lon, lat) = hit
         row["经度"], row["纬度"] = "%.6f" % lon, "%.6f" % lat
         row["坐标系"] = client.datum
-        if not (row.get("地址") or "").strip():
-            row["地址"] = address
-        print("  ✓ %-14s %.6f, %.6f" % (name, lon, lat))
+        row["定位依据"] = query
+        print("  ✓ %-14s %.6f, %.6f   ← %s" % (name, lon, lat, query))
         done += 1
 
-    print("\n补全 %d 个，跳过 %d 个（已有坐标），失败 %d 个" % (done, skipped, failed))
+    print("\n补全 %d 个，跳过 %d 个（已有坐标），失败 %d 个，调用 %d 次"
+          % (done, skipped, failed, len(cache)))
+    if rejected:
+        print("\n丢弃了 %d 个落在%s范围外的结果（大概率是外地同名地点）：" % (len(rejected), args.city))
+        for name, query, (lon, lat) in rejected:
+            print("  %-14s 「%s」→ %.4f, %.4f" % (name, query, lon, lat))
     if args.dry_run:
         print("--dry-run，没有写文件")
     elif done:

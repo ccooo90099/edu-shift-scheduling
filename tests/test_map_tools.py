@@ -25,9 +25,13 @@ class FakeMap:
 
     def __init__(self, key=None, city="深圳", **kw):
         self.key = key
+        self.calls = []
+
+    answers = POINTS          # 子类可以换成"只认校区名"来测问法链
 
     def geocode(self, address):
-        for name, point in POINTS.items():
+        self.calls.append(address)
+        for name, point in self.answers.items():
             if name in address:
                 return point
         return None
@@ -102,7 +106,7 @@ def test_补坐标_只动空的_查不到的报错但不影响其他行(centers_
     assert float(rows["百花科学"]["纬度"]) == 22.548
     assert rows["翠竹科学"]["经度"] == "114.133"        # 原来就有的没被改写
     assert rows["查不到的中心"]["经度"] == ""            # 查不到的留空，不写垃圾
-    assert "深圳石厦科学" in rows["石厦科学"]["地址"]     # 用过的地址写回来方便核对
+    assert rows["石厦科学"]["定位依据"] == "深圳石厦科学"  # 记下哪种问法命中，方便核对
     assert rows["石厦科学"]["坐标系"] == "gcj02"          # 记下来源，排班时才知道要不要折算
 
 
@@ -210,3 +214,89 @@ def test_连堂规则填自动时用推算值(tmp_path):
     assert 总数 == 2 and 不夹课 == 2       # 两对中间都没夹课
     assert 真挨着 == 1                     # 但只有甲校区那对在 20 分钟内
     assert any("90 分钟" in f.问题 for f in rep.findings)   # 乙校区被点名
+
+
+# ── 自动反查：内部中心名查不到时的兜底 ──────────────────────────
+
+class CampusOnlyMap(FakeMap):
+    """只认校区名，不认"XX科学/XX文学"这种内部中心名 —— 贴近真实地图的行为。
+
+    必须以校区名结尾才算命中：真实地图查"深圳百花科学"是查不到的，
+    查"深圳百花"才有。用子串匹配会把这个区别抹掉，测不出问法链。
+    """
+    name = "campusonly"
+    answers = {"百花": (114.058, 22.548), "石厦": (114.045, 22.530)}
+
+    def geocode(self, address):
+        self.calls.append(address)
+        for name, point in self.answers.items():
+            if address.endswith(name):
+                return point
+        return None
+
+
+class FarAwayMap(FakeMap):
+    """对模糊查询返回外省同名地点 —— 地图服务真的会这样。"""
+    name = "faraway"
+
+    def geocode(self, address):
+        self.calls.append(address)
+        return (116.40, 39.90)          # 北京
+
+
+@pytest.fixture
+def campus_csv(tmp_path):
+    path = tmp_path / "centers.csv"
+    with open(path, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["中心", "校区", "区域", "地址", "经度", "纬度"])
+        w.writerow(["百花科学", "百花", "福田区", "", "", ""])
+        w.writerow(["百花文学", "百花", "福田区", "", "", ""])
+        w.writerow(["石厦科学", "石厦", "福田区", "", "", ""])
+    return path
+
+
+def test_中心名查不到时退回校区名(campus_csv, monkeypatch):
+    """百花科学 地图上没有，深圳百花 有 —— 问法链要能兜住。"""
+    monkeypatch.setitem(mapapi.PROVIDERS, "campusonly", CampusOnlyMap)
+    code = run("tools.geocode_centers",
+               ["--provider", "campusonly", "--centers", str(campus_csv)], monkeypatch)
+    assert code == 0
+
+    rows = {r["中心"]: r for r in read(campus_csv)}
+    assert float(rows["百花科学"]["经度"]) == 114.058
+    assert rows["百花科学"]["定位依据"] == "深圳福田区百花"   # 中心名落空，退到了校区名
+
+
+def test_同校区的两栋楼共用查询结果(campus_csv, monkeypatch):
+    """百花科学和百花文学是一个校区两栋楼，坐标该一致，也不该查两遍。"""
+    monkeypatch.setitem(mapapi.PROVIDERS, "campusonly", CampusOnlyMap)
+    run("tools.geocode_centers",
+        ["--provider", "campusonly", "--centers", str(campus_csv)], monkeypatch)
+
+    rows = {r["中心"]: r for r in read(campus_csv)}
+    assert rows["百花科学"]["经度"] == rows["百花文学"]["经度"]
+    assert rows["百花科学"]["纬度"] == rows["百花文学"]["纬度"]
+
+
+def test_落在城市范围外的结果必须丢弃(campus_csv, monkeypatch):
+    """查到北京去了还照单全收，会把全城距离算歪，而且一点不报错。"""
+    monkeypatch.setitem(mapapi.PROVIDERS, "faraway", FarAwayMap)
+    code = run("tools.geocode_centers",
+               ["--provider", "faraway", "--centers", str(campus_csv)], monkeypatch)
+    assert code == 1
+
+    rows = read(campus_csv)
+    assert all(r["经度"] == "" for r in rows), "宁可留空，也不能写错的坐标"
+
+
+def test_有地址时优先用地址(tmp_path, monkeypatch):
+    monkeypatch.setitem(mapapi.PROVIDERS, "campusonly", CampusOnlyMap)
+    path = tmp_path / "centers.csv"
+    with open(path, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["中心", "校区", "区域", "地址", "经度", "纬度"])
+        w.writerow(["百花科学", "百花", "福田区", "深圳市福田区百花二路石厦", "", ""])
+    run("tools.geocode_centers",
+        ["--provider", "campusonly", "--centers", str(path)], monkeypatch)
+    assert read(path)[0]["定位依据"] == "深圳市福田区百花二路石厦"
