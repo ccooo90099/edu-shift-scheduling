@@ -1,0 +1,15 @@
+.git
+.github
+__pycache__
+*.pyc
+.pytest_cache
+tests
+docs
+analysis
+legacy
+data
+*.xlsx
+*.db
+config/rules.yaml
+config/centers.csv
+config/travel.csv

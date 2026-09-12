@@ -5,7 +5,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}排班系统{% endblock %}</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/htmx/1.9.12/htmx.min.js"></script>
+  {# htmx 走本地文件，不走 CDN —— 内网很可能上不了外网，
+     从 CDN 加载会让 hx-* 静默失效：页面照常渲染，但进度永远不刷新，
+     而且不报错。见 static/README.md。 #}
+  <script src="/static/htmx.min.js"></script>
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
@@ -17,6 +20,21 @@
     <span class="spacer"></span>
     <span class="env">内网 · 无需登录</span>
   </nav>
+
+  <div id="htmx-missing" class="banner banner-warning" style="margin:12px 24px 0">
+    <span class="banner-icon">⚠</span>
+    <div class="banner-body">
+      <strong>htmx.min.js 没加载上</strong>
+      <span class="banner-why">页面能看，但进度不会自动刷新 ——
+        请按 <code>static/README.md</code> 放一份进 <code>/static/</code>，
+        否则你会对着一个永远停在「求解中」的页面干等。</span>
+    </div>
+  </div>
+  <script>
+    // htmx 加载成功就把上面这条去掉。加载失败时它留在页面上 ——
+    // 沉默失效比报错更难查。
+    if (window.htmx) document.getElementById('htmx-missing').remove();
+  </script>
 
   {{ ui.readiness_banner(readiness) }}
 

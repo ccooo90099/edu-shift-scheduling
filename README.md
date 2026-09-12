@@ -61,20 +61,48 @@ legacy/                    已归档：桌面端、授权体系、绑定旧模�
 
 ## 跑起来
 
+### 本地开发
+
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
 pytest
 
-python tools/health_check.py --help
-python tools/schedule.py --help
+# 命令行
+python tools/health_check.py 排班明细.xlsx --config config/rules.example.yaml
+python tools/schedule.py 团队清单.xlsx --out 排班.xlsx --time-limit 120
+
+# 网页
+PYTHONPATH=src uvicorn scheduling.interfaces.web.app:create_app --factory --reload
 ```
 
-准备地理数据（各跑一次，之后排班完全离线、不需要网络也不需要 key）：
+### 内网部署
 
 ```bash
-python tools/geocode_centers.py    # 默认走 OSM，免 key
+# 先放一份 htmx（仓库里没有，见 src/scheduling/interfaces/web/static/README.md）
+curl -o src/scheduling/interfaces/web/static/htmx.min.js \
+  https://cdnjs.cloudflare.com/ajax/libs/htmx/1.9.12/htmx.min.js
+
+cp config/rules.example.yaml config/rules.yaml
+docker compose up -d --build
+```
+
+完整说明见 [`docs/部署.md`](docs/部署.md)，含首次部署要补的三样数据。
+
+> ⚠️ Dockerfile 与 compose 文件**从未真正构建运行过**（开发环境无 Docker
+> daemon），只验证了镜像内那两条命令在容器外成立。首次部署请按文档逐项确认。
+
+### 准备地理数据
+
+各跑一次，之后排班完全离线、不需要网络也不需要 key：
+
+```bash
+python tools/geocode_centers.py    # 默认 OSM，免 key
 python tools/travel_matrix.py
 ```
+
+反查不到的在网页「中心」页手动补：选**地图来源**，粘经纬度。
+不用管坐标系 —— 高德腾讯是 GCJ-02、百度是 BD-09、天地图和 OSM 是 WGS-84，
+在深圳两两差 300–700 米，系统按来源自己折算，来源认不出就报错不猜。
 
 ## 数据安全
 

@@ -1,0 +1,23 @@
+services:
+  scheduling:
+    build: .
+    image: edu-shift-scheduling:latest
+    container_name: scheduling
+    restart: unless-stopped
+    ports:
+      # 只绑内网网卡。改成 "8000:8000" 会暴露到所有网卡上 ——
+      # 这个服务**不做认证**，谁能访问谁能用，别让它出内网。
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # 上传的 xlsx、产物、SQLite 库
+      - ./data:/app/data
+      # 真实规则、中心坐标、通行时间表。只读挂载，避免容器改坏
+      - ./config:/app/config:ro
+    environment:
+      SCHEDULING_DATA: /app/data
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/api/readiness', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
