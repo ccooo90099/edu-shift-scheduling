@@ -1,0 +1,356 @@
+{
+  "experiment": "H2 legacy hard constraint versus fixed-coefficient soft proxy",
+  "script": "analysis/h2_soft_proxy_experiment.py",
+  "script_sha256": "1dd343d646e98726e7744a7c67eea37b82fc90430e3a38ca380f273a1ce71e3a",
+  "unbounded": {
+    "baseline": "bb7aafddb47139098597cff6c960aec1b1800eeb",
+    "scope": "旧六时段、旧H3、全部106团队必须排上；H2软项为产品并发代理，不是真实报读人数；其余生产目标不变",
+    "sha256": {
+      "original": "2741f59d2b1e9375eabd61fb9b2e5b052172a6acb9595df3f9e6afb8ab576b4c",
+      "solved": "9bffcd2fce2bc281e8be1ccbe2856125741dd6e742b1c1a62d8fcc076a8a02d8",
+      "config": "ca5c038ba2d26753b5f6938debe25249f0f9f3e56c5ef341b092351c452206f5"
+    },
+    "python": "3.13.12",
+    "ortools": "9.15.6755",
+    "time_limit": 30,
+    "workers": 1,
+    "seed": 20260912,
+    "room_counts": {
+      "centers": 18,
+      "zero_count_unconstrained_centers": 15
+    },
+    "cases": [
+      {
+        "mode": "hard",
+        "proxy_penalty": null,
+        "status": "FEASIBLE",
+        "build_seconds": 0.15617208601906896,
+        "solve_seconds": 30.005094000000003,
+        "first_solution_seconds": 1.127791,
+        "solution_count": 28,
+        "bound": 90.0,
+        "copied_source_room_clashes": 0,
+        "checks": {
+          "teacher": 0,
+          "travel": 0,
+          "explicit_room_assignment": false
+        },
+        "objective": 38626.0,
+        "common_objective": 38626.0,
+        "parts": {
+          "未排上团队": 0,
+          "工作量峰值": 90,
+          "跨中心": 15200,
+          "转场里程": 912,
+          "课表空档": 464,
+          "连堂未满足": 21960
+        },
+        "teams": 106,
+        "transfers": 25,
+        "single_center": 36,
+        "active_teachers": 55,
+        "legacy_H2_team_pairs": 0,
+        "H2_proxy_product_pairs": 0,
+        "legacy_adjacency": [
+          [
+            "编程双语连堂",
+            "硬",
+            24,
+            16,
+            15,
+            20
+          ],
+          [
+            "文学美育跟随",
+            "软",
+            26,
+            12,
+            7,
+            20
+          ]
+        ],
+        "checked_legacy_constraints": true,
+        "room_identity_verified": false
+      },
+      {
+        "mode": "soft_proxy_100",
+        "proxy_penalty": 100,
+        "status": "FEASIBLE",
+        "build_seconds": 0.17812687598052435,
+        "solve_seconds": 30.00533,
+        "first_solution_seconds": 0.9984710000000001,
+        "solution_count": 47,
+        "bound": 90.0,
+        "copied_source_room_clashes": 1,
+        "checks": {
+          "teacher": 0,
+          "travel": 0,
+          "explicit_room_assignment": false
+        },
+        "objective": 39268.0,
+        "common_objective": 34568.0,
+        "parts": {
+          "未排上团队": 0,
+          "H2_proxy": 4700,
+          "工作量峰值": 120,
+          "跨中心": 14400,
+          "转场里程": 864,
+          "课表空档": 344,
+          "连堂未满足": 18840
+        },
+        "teams": 106,
+        "transfers": 20,
+        "single_center": 34,
+        "active_teachers": 52,
+        "legacy_H2_team_pairs": 52,
+        "H2_proxy_product_pairs": 47,
+        "legacy_adjacency": [
+          [
+            "编程双语连堂",
+            "硬",
+            24,
+            19,
+            17,
+            20
+          ],
+          [
+            "文学美育跟随",
+            "软",
+            26,
+            15,
+            11,
+            20
+          ]
+        ],
+        "checked_legacy_constraints": true,
+        "room_identity_verified": false
+      },
+      {
+        "mode": "soft_proxy_1000",
+        "proxy_penalty": 1000,
+        "status": "FEASIBLE",
+        "build_seconds": 0.22880368499318138,
+        "solve_seconds": 30.004823000000002,
+        "first_solution_seconds": 1.289983,
+        "solution_count": 30,
+        "bound": 90.0,
+        "copied_source_room_clashes": 4,
+        "checks": {
+          "teacher": 0,
+          "travel": 0,
+          "explicit_room_assignment": false
+        },
+        "objective": 61548.0,
+        "common_objective": 34548.0,
+        "parts": {
+          "未排上团队": 0,
+          "H2_proxy": 27000,
+          "工作量峰值": 120,
+          "跨中心": 14400,
+          "转场里程": 864,
+          "课表空档": 384,
+          "连堂未满足": 18780
+        },
+        "teams": 106,
+        "transfers": 22,
+        "single_center": 35,
+        "active_teachers": 53,
+        "legacy_H2_team_pairs": 31,
+        "H2_proxy_product_pairs": 27,
+        "legacy_adjacency": [
+          [
+            "编程双语连堂",
+            "硬",
+            24,
+            19,
+            17,
+            20
+          ],
+          [
+            "文学美育跟随",
+            "软",
+            26,
+            14,
+            12,
+            20
+          ]
+        ],
+        "checked_legacy_constraints": true,
+        "room_identity_verified": false
+      }
+    ]
+  },
+  "verified_incumbent": {
+    "engine_baseline": "bb7aafddb47139098597cff6c960aec1b1800eeb",
+    "scope": "旧六时段、旧H3、全部106团队必须排上；H2软项为产品并发代理，不是真实报读人数；其余生产目标不变",
+    "sha256": {
+      "original": "2741f59d2b1e9375eabd61fb9b2e5b052172a6acb9595df3f9e6afb8ab576b4c",
+      "solved": "9bffcd2fce2bc281e8be1ccbe2856125741dd6e742b1c1a62d8fcc076a8a02d8",
+      "config": "ca5c038ba2d26753b5f6938debe25249f0f9f3e56c5ef341b092351c452206f5"
+    },
+    "python": "3.13.12",
+    "ortools": "9.15.6755",
+    "time_limit": 30,
+    "workers": 1,
+    "seed": 20260912,
+    "incumbent_bound": 38566,
+    "room_counts": {
+      "centers": 18,
+      "zero_count_unconstrained_centers": 15
+    },
+    "cases": [
+      {
+        "mode": "hard",
+        "proxy_penalty": null,
+        "status": "FEASIBLE",
+        "build_seconds": 0.1428184779942967,
+        "solve_seconds": 30.044591,
+        "first_solution_seconds": 1.045461,
+        "solution_count": 1,
+        "bound": 90.0,
+        "copied_source_room_clashes": 0,
+        "checks": {
+          "teacher": 0,
+          "travel": 0,
+          "explicit_room_assignment": false
+        },
+        "objective": 38566.0,
+        "common_objective": 38566.0,
+        "parts": {
+          "未排上团队": 0,
+          "工作量峰值": 90,
+          "跨中心": 15200,
+          "转场里程": 912,
+          "课表空档": 464,
+          "连堂未满足": 21900
+        },
+        "teams": 106,
+        "transfers": 25,
+        "single_center": 36,
+        "active_teachers": 55,
+        "legacy_H2_team_pairs": 0,
+        "H2_proxy_product_pairs": 0,
+        "legacy_adjacency": [
+          [
+            "编程双语连堂",
+            "硬",
+            24,
+            16,
+            15,
+            20
+          ],
+          [
+            "文学美育跟随",
+            "软",
+            26,
+            12,
+            7,
+            20
+          ]
+        ],
+        "checked_legacy_constraints": true,
+        "room_identity_verified": false
+      },
+      {
+        "mode": "soft_proxy_100",
+        "proxy_penalty": 100,
+        "status": "FEASIBLE",
+        "build_seconds": 0.14888471699669026,
+        "solve_seconds": 30.003825000000003,
+        "first_solution_seconds": 0.886816,
+        "solution_count": 38,
+        "bound": 90.0,
+        "copied_source_room_clashes": 3,
+        "checks": {
+          "teacher": 0,
+          "travel": 0,
+          "explicit_room_assignment": false
+        },
+        "objective": 31232.0,
+        "common_objective": 28532.0,
+        "parts": {
+          "未排上团队": 0,
+          "H2_proxy": 2700,
+          "工作量峰值": 120,
+          "跨中心": 14400,
+          "转场里程": 864,
+          "课表空档": 368,
+          "连堂未满足": 12780
+        },
+        "teams": 106,
+        "transfers": 20,
+        "single_center": 37,
+        "active_teachers": 55,
+        "legacy_H2_team_pairs": 33,
+        "H2_proxy_product_pairs": 27,
+        "legacy_adjacency": [
+          [
+            "编程双语连堂",
+            "硬",
+            24,
+            16,
+            16,
+            20
+          ],
+          [
+            "文学美育跟随",
+            "软",
+            26,
+            15,
+            12,
+            20
+          ]
+        ],
+        "checked_legacy_constraints": true,
+        "room_identity_verified": false
+      },
+      {
+        "mode": "soft_proxy_1000",
+        "proxy_penalty": 1000,
+        "status": "UNKNOWN",
+        "build_seconds": 0.1773830600141082,
+        "solve_seconds": 30.004849,
+        "first_solution_seconds": null,
+        "solution_count": 0,
+        "bound": 90.0
+      }
+    ]
+  },
+  "fixed_candidate_check": [
+    {
+      "penalty": 100,
+      "status": "OPTIMAL",
+      "objective": 38566.0,
+      "proxy_pairs": 0,
+      "seconds": 0.128715
+    },
+    {
+      "penalty": 1000,
+      "status": "OPTIMAL",
+      "objective": 38566.0,
+      "proxy_pairs": 0,
+      "seconds": 0.068287
+    }
+  ],
+  "room_micro_cases": {
+    "nonoverlap_one_room": {
+      "legacy": "OPTIMAL",
+      "explicit": "OPTIMAL"
+    },
+    "overlap_one_room": {
+      "legacy": "OPTIMAL",
+      "explicit": "INFEASIBLE"
+    },
+    "two_30p_classes_rooms_20_40": {
+      "legacy": "OPTIMAL",
+      "explicit": "INFEASIBLE"
+    }
+  },
+  "limitations": [
+    "代理产品并发数不是真实报读组合或受影响学生数",
+    "只比较一个seed、单线程、30秒，不证明普遍收敛性能",
+    "旧H3未修正：18个中心中15个派生教室数为0并跳过容量约束，物理教室可行性未验证",
+    "UNKNOWN表示本次限时搜索未返回解；已有附件的可行起点仍已验证，不得说成INFEASIBLE",
+    "各软权重对应不同目标，原始总分不可直接当统一业务指标比较"
+  ]
+}
