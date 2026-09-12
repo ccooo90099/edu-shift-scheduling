@@ -14,7 +14,7 @@
     {{ ui.field('校区', 'campus', hint='留空则自动推导') }}
     {{ ui.field('区域', 'region') }}
     {{ ui.field('地址', 'address', hint='填详细地址能提高坐标自动反查的命中率') }}
-    {{ ui.field('教室数', 'rooms', type='number', hint='仅新建时生效，会标记为估计值') }}
+    {{ ui.field('教室数', 'rooms', type='number', hint='留空则不改。填了就是实数，会覆盖估计值') }}
     <button type="submit">保存</button>
   </form>
 </section>
@@ -33,7 +33,11 @@
         <td>{{ c.campus }}</td>
         <td>{{ c.region or '—' }}</td>
         <td>
-          {{ c.room_count }}
+          <form method="post" action="/centers/{{ c.name }}/rooms" class="inline">
+            <input type="number" name="count" value="{{ c.room_count }}"
+                   min="0" size="3" style="width:60px">
+            <button type="submit">改</button>
+          </form>
           {% if c.rooms_are_estimated %}{{ ui.badge('估计', 'warn') }}{% endif %}
         </td>
         <td>
@@ -58,6 +62,11 @@
       {% endfor %}
     </tbody>
   </table>
+  <p class="note">
+    <strong>教室数填了就是实数。</strong> 标「估计」的是从历史并发峰值推出来的 ——
+    只说明「历史上至少同时开过这么多班」，不等于真实场地清单。填一次实数就不再是估计。
+    改小到低于历史峰值时，求解会把排不下的团队报成「排不上」而不是硬塞。
+  </p>
   <p class="note">
     <strong>选地图来源，不用选坐标系。</strong>
     高德和腾讯给 GCJ-02，百度给 BD-09（在 GCJ-02 上<em>再偏一次</em>，不是同一个），

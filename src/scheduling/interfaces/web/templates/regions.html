@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}区域相邻 · 排班系统{% endblock %}
+{% block content %}
+{{ ui.page_title('区域相邻关系', '决定老师跨中心时「近」到什么程度') }}
+
+<section class="card">
+  <h2>为什么要配这个</h2>
+  <p class="note">
+    跨中心不是「同区」和「跨区」两档。同一个区内换最好，
+    <strong>相邻区之间也还能换</strong>（比如宝安↔南山），不相邻的才是最差。
+    没配相邻表时，所有不同区一律按<strong>最差档</strong>算 —— 缺数据不该反而放宽约束。
+  </p>
+  <table>
+    <thead><tr><th>档位</th><th>兜底通行时间</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>同校区</td><td>15 分钟</td><td>两栋楼之间，如百花科学↔百花文学</td></tr>
+      <tr><td>同区域</td><td>40 分钟</td><td>最优的跨中心</td></tr>
+      <tr><td>相邻区域</td><td>55 分钟</td><td><strong>靠这一页配出来</strong></td></tr>
+      <tr><td>跨区域</td><td>70 分钟</td><td>不相邻，尽量避免</td></tr>
+    </tbody>
+  </table>
+  <p class="note">兜底时间只在<strong>没有坐标也没有实测通行表</strong>时用。
+     有坐标就走直线估算，有 travel.csv 就走实测。</p>
+</section>
+
+<section class="card">
+  <h2>配置</h2>
+  {% if regions %}
+  <p class="note">只写一边就行 —— 系统会自动补成双向。</p>
+  <table>
+    <thead><tr><th>区域</th><th>中心</th><th>相邻区域</th><th>改</th></tr></thead>
+    <tbody>
+      {% for r in regions %}
+      <tr>
+        <td><strong>{{ r }}</strong></td>
+        <td><small>{{ by_region[r] | join('、') }}</small></td>
+        <td>
+          {% if adjacency.get(r) %}
+            {% for n in adjacency[r] | sort %}{{ ui.badge(n, 'ok') }} {% endfor %}
+          {% else %}
+            {{ ui.badge('未配，一律按跨区域算', 'warn') }}
+          {% endif %}
+        </td>
+        <td>
+          <form method="post" action="/regions" class="inline">
+            <input type="hidden" name="region" value="{{ r }}">
+            <input name="neighbours" size="24" placeholder="逗号分隔"
+                   value="{{ raw.get(r, []) | join(',') }}">
+            <button type="submit">存</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    {{ ui.empty_state('还没有中心，所以看不到区域',
+                      '先去「中心」页加几个，填上区域') }}
+  {% endif %}
+</section>
+{% endblock %}

@@ -179,3 +179,36 @@ def test_生效权重报告标出被覆盖的项():
 def test_降级链的权重序必须严格递减():
     w = Weights()
     assert w["排不上团队"] > w["挪到另一期位"] > w["期位与历史不符"] > w["连堂未达标"]
+
+
+# ---------------------------------------------------------------- 教室数可配
+
+def test_教室数可以直接填_实数覆盖估计值():
+    """校区的教室是有限且已知的（5 间、6 间这种），
+    不该只能靠从历史并发峰值推。后台填的实数比推出来的可信。"""
+    from scheduling.domain.model.venue import Center, Room
+    c = Center("甲", "甲", rooms=[Room("甲", "估1"), Room("甲", "估2")],
+               rooms_are_estimated=True)
+    c.set_room_count(6, estimated=False)
+    assert c.room_count == 6
+    assert not c.rooms_are_estimated, "人填的不再是估计"
+
+
+def test_改教室数时保留已有教室的座位与不可用时段():
+    """多退少补，不要把已经配好的教室信息冲掉。"""
+    from scheduling.domain.model.venue import Center, Room
+    from scheduling.domain.model.timeslot import TimeSlot
+    早上 = TimeSlot.parse("08:10-10:10")
+    c = Center("甲", "甲", rooms=[Room("甲", "01", 24, frozenset({早上}))])
+    c.set_room_count(3)
+    assert c.room_count == 3
+    assert c.rooms[0].seats == 24 and 早上 in c.rooms[0].unavailable
+    c.set_room_count(1)
+    assert c.room_count == 1 and c.rooms[0].room_id == "01"
+
+
+def test_教室数不能为负():
+    from scheduling.domain.model.venue import Center
+    import pytest as _p
+    with _p.raises(ValueError):
+        Center("甲", "甲").set_room_count(-1)

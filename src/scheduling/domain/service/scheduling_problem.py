@@ -33,6 +33,8 @@ class SchedulingProblem:
     calendar: AcademicCalendar | None = None
     weights: Weights = field(default_factory=Weights)
     golden: GoldenHoursPolicy = field(default_factory=GoldenHoursPolicy)
+    #: 区域 → 相邻区域。空 = 所有不同区一律按最差档算（保守兜底）。
+    region_adjacency: dict = field(default_factory=dict)
 
     def timetable_for(self, period: Period) -> Timetable:
         return self.timetables[period]

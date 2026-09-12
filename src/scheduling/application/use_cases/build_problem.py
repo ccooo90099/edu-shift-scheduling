@@ -16,6 +16,7 @@ from ...domain.model.timetable import Timetable
 from ...domain.policy.golden_hours import DEFAULT_GOLDEN, GoldenHoursPolicy
 from ...domain.policy.weights import Weights
 from ...domain.model.timeslot import TimeSlot
+from ...domain.policy.travel import normalize_adjacency
 from ...domain.service.scheduling_problem import SchedulingProblem
 from ...infrastructure.spreadsheet.ingest import derive_centers, derive_teams
 
@@ -100,6 +101,8 @@ class BuildProblem:
         return SchedulingProblem(
             season=season, teams=teams, instructors=instructors,
             centers=centers, timetables=self.timetables(config, season),
+            region_adjacency=normalize_adjacency(
+                (config.get("地理") or {}).get("相邻区域")),
             calendar=calendar_repo.load() if calendar_repo else None,
             weights=Weights.from_config(config.get("权重")),
             golden=self.golden(config))

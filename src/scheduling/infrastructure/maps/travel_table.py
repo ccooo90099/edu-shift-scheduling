@@ -16,16 +16,19 @@ from pathlib import Path
 
 from ...domain.model.venue import Center
 from ...domain.policy.travel import (
-    ProximityTier, TravelEstimate, TravelSource, proximity_tier)
+    ProximityTier, TravelEstimate, TravelSource, normalize_adjacency,
+    proximity_tier)
 from .datum import haversine_km
 
 TRAVEL_FIELDS = ["from", "to", "minutes", "km", "source"]
 
 FALLBACK_MINUTES = {ProximityTier.SAME_CAMPUS: 15,
                     ProximityTier.SAME_REGION: 40,
+                    ProximityTier.ADJACENT_REGION: 55,
                     ProximityTier.CROSS_REGION: 70}
 FALLBACK_KM = {ProximityTier.SAME_CAMPUS: 1.0,
                ProximityTier.SAME_REGION: 8.0,
+               ProximityTier.ADJACENT_REGION: 14.0,
                ProximityTier.CROSS_REGION: 20.0}
 
 
@@ -43,9 +46,12 @@ class TravelTable:
     centers: dict[str, Center] = field(default_factory=dict)
     measured: dict[tuple[str, str], tuple[float, float]] = field(default_factory=dict)
     params: EstimateParams = field(default_factory=EstimateParams)
+    #: 区域 → 相邻区域。自动补成对称，见 normalize_adjacency。
+    adjacency: dict[str, frozenset[str]] = field(default_factory=dict)
 
     @classmethod
-    def load(cls, centers, csv_path=None, params=None) -> "TravelTable":
+    def load(cls, centers, csv_path=None, params=None,
+             adjacency=None) -> "TravelTable":
         measured: dict[tuple[str, str], tuple[float, float]] = {}
         if csv_path and Path(csv_path).exists():
             with open(csv_path, encoding="utf-8-sig", newline="") as f:
@@ -62,7 +68,8 @@ class TravelTable:
                     measured[(a, b)] = (minutes, km)
                     measured.setdefault((b, a), (minutes, km))
         return cls(centers=dict(centers), measured=measured,
-                   params=params or EstimateParams())
+                   params=params or EstimateParams(),
+                   adjacency=normalize_adjacency(adjacency))
 
     @property
     def campus_of(self) -> dict[str, str]:
@@ -73,7 +80,7 @@ class TravelTable:
         return {n: c.region for n, c in self.centers.items() if c.region}
 
     def between(self, a: str, b: str) -> TravelEstimate:
-        tier = proximity_tier(a, b, self.campus_of, self.region_of)
+        tier = proximity_tier(a, b, self.campus_of, self.region_of, self.adjacency)
         if a == b:
             return TravelEstimate(0.0, 0.0, TravelSource.MAP, tier)
 

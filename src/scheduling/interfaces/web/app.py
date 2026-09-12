@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import json
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -22,6 +23,7 @@ from ...domain.model.curriculum import product_of
 from ...domain.model.instructor import Instructor
 from ...domain.model.timeslot import TimeSlot
 from ...domain.model.venue import Center, Coordinate, MAP_SOURCE_DATUM, Room
+from ...domain.policy.travel import normalize_adjacency
 from .container import Container
 
 HERE = Path(__file__).parent
@@ -30,6 +32,27 @@ templates = Jinja2Templates(directory=str(HERE / "templates"))
 #: 求解跑很久（大候选池下可能几分钟不收敛），必须后台跑 + 轮询。
 #: 内网并发个位数，线程池就够，不引入 Celery/Redis。
 _pool = ThreadPoolExecutor(max_workers=2)
+
+
+#: 区域相邻表存成一个 json 文件。它是配置不是主数据，量小、改得少，
+#: 不值得为它单开一张表。
+def _adjacency_path(c: Container):
+    return c.data_dir / "region_adjacency.json"
+
+
+def _load_adjacency(c: Container) -> dict:
+    path = _adjacency_path(c)
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_adjacency(c: Container, raw: dict) -> None:
+    _adjacency_path(c).write_text(
+        json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def create_app(container: Container | None = None) -> FastAPI:
@@ -71,15 +94,29 @@ def create_app(container: Container | None = None) -> FastAPI:
     @app.post("/centers")
     def save_center(name: str = Form(...), campus: str = Form(""),
                     region: str = Form(""), address: str = Form(""),
-                    rooms: int = Form(0),
+                    rooms: int = Form(-1),
                     c: Container = Depends(get_container)):
         existing = c.centers.get(name)
         center = existing or Center(name=name, campus=campus or Center.campus_of(name))
         center.campus = campus or Center.campus_of(name)
         center.region, center.address = region, address
-        if rooms and not center.rooms:
-            center.rooms = [Room(name, "R%d" % i) for i in range(1, rooms + 1)]
-            center.rooms_are_estimated = True
+        if rooms >= 0:
+            # 后台填的是实数，覆盖掉从历史并发推出来的估计值
+            center.set_room_count(rooms, estimated=False)
+        c.centers.save(center)
+        return RedirectResponse("/centers", status_code=303)
+
+    @app.post("/centers/{name}/rooms")
+    def set_rooms(name: str, count: int = Form(...),
+                  c: Container = Depends(get_container)):
+        """单独改教室数。这是**实数**，不是估计 —— 人填的比从历史推的可信。"""
+        center = c.centers.get(name)
+        if center is None:
+            raise HTTPException(404, "没有这个中心：%s" % name)
+        try:
+            center.set_room_count(count, estimated=False)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
         c.centers.save(center)
         return RedirectResponse("/centers", status_code=303)
 
@@ -103,6 +140,27 @@ def create_app(container: Container | None = None) -> FastAPI:
         center.located_by = "手动补录（%s）" % map_source
         c.centers.save(center)
         return RedirectResponse("/centers", status_code=303)
+
+    # ------------------------------------------------------------ 区域相邻
+
+    @app.get("/regions", response_class=HTMLResponse)
+    def regions_page(request: Request, c: Container = Depends(get_container)):
+        centers = c.centers.all()
+        regions = sorted({x.region for x in centers if x.region})
+        raw = _load_adjacency(c)
+        return render(request, "regions.html", regions=regions,
+                      adjacency=normalize_adjacency(raw), raw=raw,
+                      by_region={r: [x.name for x in centers if x.region == r]
+                                 for r in regions})
+
+    @app.post("/regions")
+    def save_adjacency(region: str = Form(...), neighbours: str = Form(""),
+                       c: Container = Depends(get_container)):
+        raw = _load_adjacency(c)
+        raw[region] = [x.strip() for x in neighbours.replace("，", ",").split(",")
+                       if x.strip()]
+        _save_adjacency(c, raw)
+        return RedirectResponse("/regions", status_code=303)
 
     # ------------------------------------------------------------ 指导员
 

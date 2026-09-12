@@ -61,3 +61,43 @@ def test_实测表双向可查():
     t.measured[("甲", "乙")] = (25.0, 9.0)
     t.measured.setdefault(("乙", "甲"), (25.0, 9.0))
     assert t.between("乙", "甲").minutes == 25
+
+
+# ── 相邻区域（用户补充）─────────────────────────────────────
+
+def test_跨区分两档_相邻区好过不相邻():
+    """用户原话：「宝安区内的就跨宝安区内的，宝安就跟南山换嘛，
+    相邻的这样可以换。但尽可能就是同一个区。」"""
+    centers = {c.name: c for c in [
+        中心("宝安甲", region="宝安"), 中心("宝安乙", region="宝安"),
+        中心("南山甲", region="南山"), 中心("龙岗甲", region="龙岗")]}
+    t = TravelTable.load(centers, adjacency={"宝安": ["南山"]})
+
+    assert t.between("宝安甲", "宝安乙").tier is ProximityTier.SAME_REGION
+    assert t.between("宝安甲", "南山甲").tier is ProximityTier.ADJACENT_REGION
+    assert t.between("宝安甲", "龙岗甲").tier is ProximityTier.CROSS_REGION
+
+
+def test_四档的好坏顺序与兜底时间一致():
+    assert (ProximityTier.SAME_CAMPUS.rank < ProximityTier.SAME_REGION.rank
+            < ProximityTier.ADJACENT_REGION.rank < ProximityTier.CROSS_REGION.rank)
+    from scheduling.infrastructure.maps.travel_table import FALLBACK_MINUTES
+    times = [FALLBACK_MINUTES[t] for t in sorted(ProximityTier, key=lambda x: x.rank)]
+    assert times == sorted(times), "档位越差，兜底时间必须越长"
+
+
+def test_相邻表只写一边也生效():
+    """配置里写「宝安: [南山]」就够，不必再写一遍「南山: [宝安]」——
+    只写一边而系统只认一边，是这类配置最常见的错。"""
+    centers = {c.name: c for c in [中心("宝安甲", region="宝安"),
+                                   中心("南山甲", region="南山")]}
+    t = TravelTable.load(centers, adjacency={"宝安": ["南山"]})
+    assert t.between("南山甲", "宝安甲").tier is ProximityTier.ADJACENT_REGION
+
+
+def test_没配相邻表时一律按最差档而不是相邻():
+    """缺数据不该反而放宽约束。"""
+    centers = {c.name: c for c in [中心("甲", region="宝安"),
+                                   中心("乙", region="南山")]}
+    assert TravelTable.load(centers).between("甲", "乙").tier \
+        is ProximityTier.CROSS_REGION

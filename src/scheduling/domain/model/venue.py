@@ -74,12 +74,30 @@ class Center:
     #: 定位依据 —— 命中的是哪种问法，方便逐条核对
     located_by: str = ""
     rooms: list[Room] = field(default_factory=list)
-    #: 教室数为估计值（由历史并发峰值推出）而非实测清单时为 True
+    #: 教室数为估计值（由历史并发峰值推出）而非后台填的实数时为 True。
+    #: 界面上要标出来 —— 估计值不等于经过核验的真实场地清单。
     rooms_are_estimated: bool = False
 
     @property
     def room_count(self) -> int:
         return len(self.rooms)
+
+    def set_room_count(self, count: int, *, estimated: bool = False) -> None:
+        """把教室数设成 count。
+
+        后台直接填的数是**实数**（`estimated=False`），会覆盖掉之前从
+        历史并发峰值推出来的估计值 —— 人填的比推的可信。
+
+        多退少补：已有的教室保留（可能带座位数和不可用时段），
+        不够的补占位，多出来的从尾部去掉。
+        """
+        if count < 0:
+            raise ValueError("教室数不能为负")
+        keep = self.rooms[:count]
+        for i in range(len(keep), count):
+            keep.append(Room(self.name, "R%d" % (i + 1)))
+        self.rooms = keep
+        self.rooms_are_estimated = estimated
 
     @property
     def has_coordinate(self) -> bool:

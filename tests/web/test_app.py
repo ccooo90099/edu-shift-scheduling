@@ -156,3 +156,58 @@ def test_没有产物时下载返回404(client, app):
     app.state.container.tasks.create(
         SolveTask(id="t3", name="x", season="寒暑假"))
     assert client.get("/tasks/t3/download").status_code == 404
+
+
+# ── 教室数可配（用户补充）───────────────────────────────────
+
+def test_教室数可以随时改_不只是新建时(client, app):
+    """校区的教室是有限且已知的，后台要能直接填。"""
+    client.post("/centers", data={"name": "甲中心", "rooms": "3"})
+    assert app.state.container.centers.get("甲中心").room_count == 3
+
+    client.post("/centers/甲中心/rooms", data={"count": "6"})
+    c = app.state.container.centers.get("甲中心")
+    assert c.room_count == 6
+    assert not c.rooms_are_estimated, "人填的是实数，不是估计"
+
+
+def test_留空教室数时不动原值(client, app):
+    client.post("/centers", data={"name": "甲中心", "rooms": "5"})
+    client.post("/centers", data={"name": "甲中心", "region": "福田"})
+    c = app.state.container.centers.get("甲中心")
+    assert c.room_count == 5, "只改区域不该把教室数清零"
+    assert c.region == "福田"
+
+
+def test_教室数填负数被拒(client):
+    client.post("/centers", data={"name": "甲中心"})
+    assert client.post("/centers/甲中心/rooms",
+                       data={"count": "-1"}).status_code == 400
+
+
+# ── 区域相邻（用户补充）─────────────────────────────────────
+
+def test_区域相邻页列出所有区域并标出未配的(client):
+    client.post("/centers", data={"name": "宝安甲", "region": "宝安"})
+    client.post("/centers", data={"name": "南山甲", "region": "南山"})
+    body = client.get("/regions").text
+    assert "宝安" in body and "南山" in body
+    assert "未配，一律按跨区域算" in body
+
+
+def test_配了相邻关系后自动补成双向(client):
+    client.post("/centers", data={"name": "宝安甲", "region": "宝安"})
+    client.post("/centers", data={"name": "南山甲", "region": "南山"})
+    client.post("/regions", data={"region": "宝安", "neighbours": "南山"})
+
+    body = client.get("/regions").text
+    assert "未配" not in body, "两边都该显示已配 —— 只写一边系统自动补反向"
+
+
+def test_相邻表落盘后重启仍在(client, app, tmp_path):
+    client.post("/centers", data={"name": "宝安甲", "region": "宝安"})
+    client.post("/regions", data={"region": "宝安", "neighbours": "南山,福田"})
+    assert (tmp_path / "region_adjacency.json").exists()
+
+    from scheduling.interfaces.web.app import _load_adjacency
+    assert _load_adjacency(app.state.container)["宝安"] == ["南山", "福田"]
