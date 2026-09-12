@@ -75,13 +75,43 @@ def test_区间相交但授课日不重叠时不算撞车():
     assert not r.of("H1-跨批次"), "但授课日不同天，不该报冲突"
 
 
-def test_教室超额时标注数据是不是估计():
+def test_中心教室超额时标注数据是不是估计():
     c = Center("甲中心", "甲", "福田", rooms=[Room("甲中心", "估1")],
                rooms_are_estimated=True)
     r = check(问题([团队("T1", "甲中心", "08:10-10:10", "甲老师"),
                     团队("T2", "甲中心", "08:10-10:10", "乙老师")],
                    centers={"甲中心": c}))
-    assert r.of("H3") and "估计值" in r.of("H3")[0].detail
+    assert r.of("H3-中心") and "估计值" in r.of("H3-中心")[0].detail
+
+
+def test_容量分两层查_报告要指明是哪一层卡住的():
+    """否则「不可行」查不出源头 —— 是某栋楼教室不够，还是整个校区超了。"""
+    centers = {n: Center(n, "百花", "福田", rooms=[Room(n, "R%d" % i)
+                                                   for i in range(3)])
+               for n in ("百花科学", "百花文学")}
+    teams = [团队("T1", "百花科学", "08:10-10:10", "甲老师"),
+             团队("T2", "百花文学", "08:10-10:10", "乙老师")]
+
+    # 只有中心级：3 间教室各放 1 个班，不超
+    p = 问题(teams, centers=centers)
+    assert not check(p).of("H3-中心") and not check(p).of("H3-校区")
+
+    # 加上校区级上限 1：校区这一层就超了
+    p2 = 问题(teams, centers=centers)
+    p2.campus_caps = {"百花": 1}
+    r = check(p2)
+    assert not r.of("H3-中心"), "中心级没超"
+    assert r.of("H3-校区"), "校区级超了，且要单独报出来"
+    assert "百花 校区" in r.of("H3-校区")[0].detail
+
+
+def test_没配校区上限时不报校区违规():
+    centers = {n: Center(n, "百花", "福田", rooms=[Room(n, "R1")])
+               for n in ("百花科学", "百花文学")}
+    r = check(问题([团队("T1", "百花科学", "08:10-10:10", "甲老师"),
+                    团队("T2", "百花文学", "08:10-10:10", "乙老师")],
+                   centers=centers))
+    assert not r.of("H3-校区"), "没配就不该凭空造限制"
 
 
 def test_缺坐标要作为未检查项列出而不是当成没问题():

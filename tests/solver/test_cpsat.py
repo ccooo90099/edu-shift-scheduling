@@ -175,3 +175,39 @@ def test_求解状态如实汇报_FEASIBLE不等于OPTIMAL():
     if r.status == "FEASIBLE":
         assert any("未证明最优" in n for n in r.notes)
     assert r.best_bound is not None
+
+
+# ---------------------------------------------------------------- 场地容量两层
+
+def test_校区并发上限比教室数更严时生效():
+    """两栋楼加起来 4 间教室，但校区只允许同时开 2 个班。"""
+    单档 = Timetable(["08:10-10:10"])
+    teams = [团队("T%d" % i, 数学, center="百花科学" if i < 2 else "百花文学")
+             for i in range(4)]
+    p = 问题(teams, [老师("A%d" % i, 数学) for i in range(4)],
+             [中心("百花科学", rooms=2), 中心("百花文学", rooms=2)],
+             timetables={Period.A: 单档})
+    assert 求解(p).all_placed, "只按教室数的话 4 个班放得下"
+
+    p2 = 问题(teams, [老师("A%d" % i, 数学) for i in range(4)],
+              [中心("百花科学", rooms=2), 中心("百花文学", rooms=2)],
+              timetables={Period.A: 单档}, campus_caps={"百花": 2})
+    r = 求解(p2)
+    assert sum(1 for t in r.teams if t.is_scheduled) == 2, "校区上限 2 更严"
+
+
+def test_没配校区上限时不凭空造限制():
+    单档 = Timetable(["08:10-10:10"])
+    teams = [团队("T%d" % i, 数学) for i in range(3)]
+    p = 问题(teams, [老师("A%d" % i, 数学) for i in range(3)],
+             [中心(rooms=3)], timetables={Period.A: 单档})
+    assert 求解(p).all_placed
+
+
+def test_教室数比校区上限更严时按教室数():
+    单档 = Timetable(["08:10-10:10"])
+    teams = [团队("T%d" % i, 数学) for i in range(3)]
+    p = 问题(teams, [老师("A%d" % i, 数学) for i in range(3)],
+             [中心(rooms=1)], timetables={Period.A: 单档},
+             campus_caps={"甲": 10})
+    assert sum(1 for t in 求解(p).teams if t.is_scheduled) == 1

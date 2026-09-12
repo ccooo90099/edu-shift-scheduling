@@ -15,6 +15,7 @@ from ..model.team import Team
 from ..model.timetable import Timetable
 from ..model.venue import Center
 from ..policy.adjacency import AdjacencyGrade, AdjacencyPolicy
+from ..policy.capacity import CapacityPolicy
 from ..policy.golden_hours import GoldenHoursPolicy
 from ..policy.travel import count_transfers
 from ..policy.weights import Weights
@@ -35,6 +36,12 @@ class SchedulingProblem:
     golden: GoldenHoursPolicy = field(default_factory=GoldenHoursPolicy)
     #: 区域 → 相邻区域。空 = 所有不同区一律按最差档算（保守兜底）。
     region_adjacency: dict = field(default_factory=dict)
+    #: 校区 → 同时最多开几个班。空 = 只按中心的教室数限制。
+    campus_caps: dict = field(default_factory=dict)
+
+    @property
+    def capacity(self) -> CapacityPolicy:
+        return CapacityPolicy.from_centers(self.centers, self.campus_caps)
 
     def timetable_for(self, period: Period) -> Timetable:
         return self.timetables[period]

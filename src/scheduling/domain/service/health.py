@@ -70,20 +70,34 @@ def check(problem: SchedulingProblem, teams=None) -> HealthReport:
 
     report.violations.extend(_clashes_within(teams))
 
-    # H3 教室容量
+    # H3 场地容量，两层分别查 —— 报告要指明是哪一层卡住的，
+    # 否则「不可行」查不出源头
+    capacity = problem.capacity
     for period, timetable in problem.timetables.items():
         for group in timetable.concurrent_groups:
             by_center: dict[str, int] = {}
+            by_campus: dict[str, int] = {}
             for t in teams:
                 if t.is_scheduled and t.period is period and t.slot in group:
                     by_center[t.center] = by_center.get(t.center, 0) + 1
+                    by_campus[t.campus] = by_campus.get(t.campus, 0) + 1
+
             for center_name, n in by_center.items():
-                center = problem.centers.get(center_name)
-                if center and n > center.room_count:
-                    kind = "（教室数为估计值）" if center.rooms_are_estimated else ""
+                limit = capacity.center_limit(center_name)
+                if limit is not None and n > limit:
+                    center = problem.centers.get(center_name)
+                    kind = ("（教室数为估计值，非实测清单）"
+                            if center and center.rooms_are_estimated else "")
                     report.violations.append(Violation(
-                        "H3", "%s 在 %s 同时开 %d 个班，超过 %d 间教室%s"
-                        % (center_name, group[0].text, n, center.room_count, kind)))
+                        "H3-中心", "%s 在 %s 同时开 %d 个班，超过 %d 间教室%s"
+                        % (center_name, group[0].text, n, limit, kind)))
+
+            for campus_name, n in by_campus.items():
+                limit = capacity.campus_limit(campus_name)
+                if limit is not None and n > limit:
+                    report.violations.append(Violation(
+                        "H3-校区", "%s 校区在 %s 同时开 %d 个班，超过上限 %d"
+                        % (campus_name, group[0].text, n, limit)))
 
     # H4 资质
     for t in teams:

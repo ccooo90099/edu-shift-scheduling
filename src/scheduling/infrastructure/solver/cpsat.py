@@ -132,17 +132,21 @@ class CpSatScheduler:
                     if len(terms) > 1:
                         m.Add(sum(terms) <= 1)
 
-        # H3 教室容量：同一并发组内，中心的并发团队数不超过教室数。
-        # 教室是实体，缺数据时上游必须给出**标注为估计**的数值，
-        # 不能派生出 0 间然后让约束整个消失。
+        # H3 场地容量。两层，都可选，同时生效时自然取更严的：
+        #   ① 中心级：教室数
+        #   ② 校区级：整个校区同时最多开几个班
+        # 粒度不固定所以都做成配置；没配的那一层不加约束，
+        # **不要凭空造一个限制出来**。
+        capacity = p.capacity
         by_center = defaultdict(list)
+        by_campus = defaultdict(list)
         for t in p.teams:
             by_center[t.center].append(t)
-        for center_name, members in by_center.items():
-            center = p.centers.get(center_name)
-            if center is None:
-                continue
-            limit = center.room_count
+            by_campus[t.campus].append(t)
+
+        def limit_concurrency(members, limit):
+            if limit is None:
+                return
             for period, timetable in p.timetables.items():
                 for group in timetable.concurrent_groups:
                     terms = [self.x[(t.id, period, s)]
@@ -150,6 +154,11 @@ class CpSatScheduler:
                              if (t.id, period, s) in self.x]
                     if terms:
                         m.Add(sum(terms) <= limit)
+
+        for center_name, members in by_center.items():
+            limit_concurrency(members, capacity.center_limit(center_name))
+        for campus_name, members in by_campus.items():
+            limit_concurrency(members, capacity.campus_limit(campus_name))
 
         # 指导员单日最多节数
         for name, inst in p.instructors.items():

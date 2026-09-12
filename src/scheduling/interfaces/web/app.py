@@ -55,6 +55,27 @@ def _save_adjacency(c: Container, raw: dict) -> None:
         json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+#: 校区并发上限。粒度不固定 —— 有的校区卡在某栋楼的教室数，
+#: 有的卡在整个校区能同时开几个班，所以两层都做成配置。
+def _caps_path(c: Container):
+    return c.data_dir / "campus_caps.json"
+
+
+def _load_caps(c: Container) -> dict:
+    path = _caps_path(c)
+    if not path.exists():
+        return {}
+    try:
+        return {k: int(v) for k, v in json.loads(path.read_text(encoding="utf-8")).items()}
+    except (json.JSONDecodeError, OSError, ValueError, TypeError):
+        return {}
+
+
+def _save_caps(c: Container, caps: dict) -> None:
+    _caps_path(c).write_text(
+        json.dumps(caps, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def create_app(container: Container | None = None) -> FastAPI:
     app = FastAPI(title="排班系统", docs_url="/api/docs")
     app.state.container = container or Container.build()
@@ -140,6 +161,43 @@ def create_app(container: Container | None = None) -> FastAPI:
         center.located_by = "手动补录（%s）" % map_source
         c.centers.save(center)
         return RedirectResponse("/centers", status_code=303)
+
+    # ------------------------------------------------------------ 场地容量
+
+    @app.get("/capacity", response_class=HTMLResponse)
+    def capacity_page(request: Request, c: Container = Depends(get_container)):
+        centers = c.centers.all()
+        caps = _load_caps(c)
+        campuses = sorted({x.campus for x in centers})
+        rows = []
+        for campus in campuses:
+            members = [x for x in centers if x.campus == campus]
+            rows.append({
+                "campus": campus,
+                "centers": members,
+                "room_total": sum(x.room_count for x in members),
+                "cap": caps.get(campus),
+                "estimated": any(x.rooms_are_estimated for x in members)})
+        return render(request, "capacity.html", rows=rows)
+
+    @app.post("/capacity")
+    def save_cap(campus: str = Form(...), cap: str = Form(""),
+                 c: Container = Depends(get_container)):
+        """设/清校区并发上限。留空 = 不设这一层，只按各中心的教室数限制。"""
+        caps = _load_caps(c)
+        text = (cap or "").strip()
+        if not text:
+            caps.pop(campus, None)
+        else:
+            try:
+                value = int(text)
+            except ValueError:
+                raise HTTPException(400, "校区上限要填整数，收到 %r" % cap) from None
+            if value < 0:
+                raise HTTPException(400, "校区上限不能为负")
+            caps[campus] = value
+        _save_caps(c, caps)
+        return RedirectResponse("/capacity", status_code=303)
 
     # ------------------------------------------------------------ 区域相邻
 

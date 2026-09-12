@@ -103,6 +103,9 @@ class BuildProblem:
             centers=centers, timetables=self.timetables(config, season),
             region_adjacency=normalize_adjacency(
                 (config.get("地理") or {}).get("相邻区域")),
+            campus_caps={k: int(v) for k, v in
+                         ((config.get("场地") or {}).get("校区并发上限")
+                          or {}).items()},
             calendar=calendar_repo.load() if calendar_repo else None,
             weights=Weights.from_config(config.get("权重")),
             golden=self.golden(config))

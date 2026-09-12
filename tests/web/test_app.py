@@ -211,3 +211,38 @@ def test_相邻表落盘后重启仍在(client, app, tmp_path):
 
     from scheduling.interfaces.web.app import _load_adjacency
     assert _load_adjacency(app.state.container)["宝安"] == ["南山", "福田"]
+
+
+# ── 场地容量两层（用户补充：教室数不一定，做成配置）──────────
+
+def test_校区容量页列出各校区及其中心(client):
+    client.post("/centers", data={"name": "百花科学", "campus": "百花", "rooms": "3"})
+    client.post("/centers", data={"name": "百花文学", "campus": "百花", "rooms": "2"})
+    body = client.get("/capacity").text
+    assert "百花" in body
+    assert "百花科学（3 间）" in body and "百花文学（2 间）" in body
+    assert "只按各中心教室数" in body, "没配校区上限时要说明"
+
+
+def test_设了校区上限后标出哪一层更严(client):
+    client.post("/centers", data={"name": "百花科学", "campus": "百花", "rooms": "3"})
+    client.post("/centers", data={"name": "百花文学", "campus": "百花", "rooms": "2"})
+    client.post("/capacity", data={"campus": "百花", "cap": "2"})
+    body = client.get("/capacity").text
+    assert "校区上限更严" in body
+
+
+def test_校区上限留空表示不设这一层(client, app):
+    from scheduling.interfaces.web.app import _load_caps
+    client.post("/centers", data={"name": "甲中心", "campus": "甲", "rooms": "3"})
+    client.post("/capacity", data={"campus": "甲", "cap": "2"})
+    assert _load_caps(app.state.container) == {"甲": 2}
+
+    client.post("/capacity", data={"campus": "甲", "cap": ""})
+    assert _load_caps(app.state.container) == {}, "留空 = 清掉这一层，不是设成 0"
+
+
+def test_校区上限非法输入被拒(client):
+    client.post("/centers", data={"name": "甲中心", "campus": "甲"})
+    assert client.post("/capacity", data={"campus": "甲", "cap": "abc"}).status_code == 400
+    assert client.post("/capacity", data={"campus": "甲", "cap": "-1"}).status_code == 400

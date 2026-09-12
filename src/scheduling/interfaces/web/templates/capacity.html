@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}场地容量 · 排班系统{% endblock %}
+{% block content %}
+{{ ui.page_title('场地容量', '同一时刻最多能开几个班') }}
+
+<section class="card">
+  <h2>两层，都可选</h2>
+  <p class="note">
+    教室数不一定就是真正的瓶颈，所以容量分两层配，
+    <strong>同时生效时取更严的那条</strong>：
+  </p>
+  <table>
+    <thead><tr><th>层</th><th>配在哪</th><th>什么时候需要</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>中心级</strong>：教室数</td>
+        <td><a href="/centers">中心页</a></td>
+        <td>教室物理上就在某栋楼里，这是基础的一层</td>
+      </tr>
+      <tr>
+        <td><strong>校区级</strong>：同时最多几个班</td>
+        <td>本页</td>
+        <td>真正卡住的不是某栋楼的教室，而是整个校区能同时开几个班 ——
+            共用的前台、可调度的老师等</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="note">
+    <strong>留空 = 不设这一层。</strong> 没配校区上限时只按各中心的教室数限制 ——
+    不会凭空给你造一个限制出来。
+  </p>
+</section>
+
+<section class="card">
+  <h2>按校区配</h2>
+  {% if rows %}
+  <table>
+    <thead><tr>
+      <th>校区</th><th>下属中心</th><th>教室合计</th>
+      <th>校区并发上限</th><th>实际生效</th>
+    </tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td><strong>{{ r.campus }}</strong></td>
+        <td>
+          <small>
+          {% for c in r.centers %}{{ c.name }}（{{ c.room_count }} 间）{% if not loop.last %} · {% endif %}{% endfor %}
+          </small>
+        </td>
+        <td>
+          {{ r.room_total }}
+          {% if r.estimated %}{{ ui.badge('含估计', 'warn') }}{% endif %}
+        </td>
+        <td>
+          <form method="post" action="/capacity" class="inline">
+            <input type="hidden" name="campus" value="{{ r.campus }}">
+            <input name="cap" size="4" style="width:64px"
+                   value="{{ r.cap if r.cap is not none else '' }}"
+                   placeholder="不限">
+            <button type="submit">存</button>
+          </form>
+        </td>
+        <td>
+          {% if r.cap is none %}
+            <small>只按各中心教室数</small>
+          {% elif r.cap < r.room_total %}
+            {{ ui.badge('校区上限更严', 'warn') }}
+            <small>{{ r.cap }} &lt; {{ r.room_total }}</small>
+          {% else %}
+            <small>教室数更严</small>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    {{ ui.empty_state('还没有中心，所以看不到校区', '先去「中心」页加几个') }}
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>排不下的时候</h2>
+  <p class="note">
+    容量卡住时，求解不会硬塞，也不会一声不响少排 —— 它会走
+    <strong>降级链</strong>：先试着把这撮学生的课挪到另一个期位
+    （寒暑假的第二期 / 春秋季的周日），实在不行才报「排不上」。
+    问题清单里会写明是<strong>哪一层</strong>卡住的（中心的教室数，还是校区的并发上限），
+    否则「不可行」查不出源头。
+  </p>
+</section>
+{% endblock %}
