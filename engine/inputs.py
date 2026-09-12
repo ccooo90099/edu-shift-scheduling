@@ -6,6 +6,7 @@
 from dataclasses import dataclass, field
 
 from .data import TIME_COL
+from .slots import concurrent_slot_groups
 
 
 @dataclass
@@ -100,17 +101,35 @@ def derive_instructors(df, 可去中心="就近", 单日最多节数=4):
 def derive_rooms(df):
     """每个中心有几间教室。
 
-    有指导室字段的按实际间数；没有的按该中心历史上的最大并发团队数兜底——
-    宁可保守一点，也不要排出一个塞不下的班。
+    标签完整时按历史出现过的间数；标签缺失时结合已见教室与历史最大并发估计。
+    这是从历史记录派生的容量，不等于经过核验的真实场地清单。
     """
     rooms = {}
-    named = df[df.get("指导室", "").astype(str).str.strip() != ""] if "指导室" in df else df.iloc[0:0]
+    if "指导室" in df:
+        labels = df["指导室"].astype("string").str.strip()
+        valid = labels.notna() & labels.ne("")
+        named = df[valid].copy()
+        named["指导室"] = labels[valid]
+        incomplete = set(df.loc[~valid, "中心"])
+    else:
+        named = df.iloc[0:0]
+        incomplete = set(df["中心"])
     for center, sub in named.groupby("中心"):
         rooms[center] = sub["指导室"].nunique()
 
-    concurrent = df.groupby(["中心", "段次", "周", TIME_COL]).size().groupby("中心").max()
-    for center, peak in concurrent.items():
-        rooms.setdefault(center, int(peak))
+    estimated = {}
+    for (center, _, _), sub in df.groupby(["中心", "段次", "周"]):
+        if center not in incomplete:
+            continue
+        # 部分标签缺失时，已见标签数也不代表完整容量，仍需要历史并发估计。
+        # 各教学日的峰值在下面单独累计，不能把不同天的课程一起求和。
+        rooms_for_day = sub[TIME_COL].value_counts()
+        peak = max((sum(int(rooms_for_day[s]) for s in group)
+                    for group in concurrent_slot_groups(rooms_for_day.index)), default=0)
+        # 不能直接写rooms，否则后续教学日会被误当作“已有真实教室标签”。
+        estimated[center] = max(estimated.get(center, 0), peak)
+    for center, peak in estimated.items():
+        rooms[center] = max(rooms.get(center, 0), peak)
     return rooms
 
 

@@ -15,7 +15,9 @@ from dataclasses import dataclass, field
 
 from ortools.sat.python import cp_model
 
-from .slots import derive_adjacency_limit, make_gap_counter, overlaps, parse_slot
+from .slots import (
+    concurrent_slot_groups, derive_adjacency_limit, make_gap_counter, overlaps, parse_slot,
+)
 from .travel import Travel, load_geo
 
 UNASSIGNED = "未排上"
@@ -193,15 +195,17 @@ class _GroupModel:
 
     def _room_capacity(self):
         """H3 同一中心同一时段的并发团队数不超过教室数。"""
+        concurrent = concurrent_slot_groups(self.slots)
         by_center = defaultdict(list)
         for t in self.teams:
             by_center[t.中心].append(t)
         for center, members in by_center.items():
             limit = self.rooms.get(center)
-            if not limit:
+            if limit is None:
                 continue
-            for s in self.slots:
-                self.m.Add(sum(self.team_slot[(t.团队ID, s)] for t in members) <= limit)
+            for group in concurrent:
+                self.m.Add(sum(self.team_slot[(t.团队ID, s)]
+                               for t in members for s in group) <= limit)
 
     def _workload(self):
         """单人单日上限，以及把最重的那个人压下来。"""
