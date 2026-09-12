@@ -11,12 +11,12 @@ import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# 桌面端与授权入口已归档到 legacy/（见 legacy/README.md），这里只覆盖在用的命令行入口。
 ENTRY_POINTS = [
-    (["tools/embed_pubkey.py", "--allow-missing"], 0),
-    (["tools/admin_license.py", "--help"], 0),
     (["tools/health_check.py", "--help"], 0),
-    (["apps/admin/main.py", "--selftest"], 0),
-    (["apps/user/main.py", "--selftest"], 0),
+    (["tools/schedule.py", "--help"], 0),
+    (["tools/geocode_centers.py", "--help"], 0),
+    (["tools/travel_matrix.py", "--help"], 0),
 ]
 
 

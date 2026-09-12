@@ -1,115 +1,72 @@
-# edu-shift-scheduling · 排班助手
+# 排班系统
 
-把「人工在 Excel 里手工拖排班」变成「输入约束 → 自动生成排班表 + 看板 + 冲突报告」。
-跨平台桌面应用，分用户端和管理端两个产物。
+深圳某教培机构的自动排课工具。把「人在 Excel 里手工把两百多个班拖进时段格子」这件事反过来做：
+**给定要开的课、可用的指导员、规则，自动排出课表**，并产出看板和冲突报告。
 
-Codex / Claude 的共同入口是 [`AGENTS.md`](AGENTS.md)，[`CLAUDE.md`](CLAUDE.md) 指向它。
-详细[异步交流协议](docs/collaboration/README.md)规定每次交流新增消息文件，注明回复对象、代码版本和证据。
+## 文档
 
-## 现状
-
-| 模块 | 状态 |
+| 文档 | 看什么 |
 |---|---|
-| 需求与约束梳理 | ✅ [`docs/需求理解.md`](docs/需求理解.md) |
-| 规则配置 schema | ✅ [`config/rules.example.yaml`](config/rules.example.yaml) |
-| 排班体检引擎 | ✅ `engine/` + `tools/health_check.py` |
-| 授权（签发 / 验证） | ✅ `licensing/` |
-| 地图距离 / 驾车耗时 | ✅ `engine/mapapi.py`，默认免 key |
-| 两端桌面应用 | ✅ `apps/user` `apps/admin`（公钥已钉死） |
-| CI 三平台构建 | ✅ [`.github/workflows/build.yml`](.github/workflows/build.yml) |
-| **自动排班求解器** | ✅ `engine/solver.py`（CP-SAT） |
-| 看板视图 | ✅ 输出 xlsx 自带 |
+| [`docs/业务理解.md`](docs/业务理解.md) | **先看这份**。业务规则的精简版，只写结论 |
+| [`docs/业务需求.md`](docs/业务需求.md) | 完整版：数据证据、推导过程、缺陷清单、状态清单 |
+| [`docs/架构与功能逻辑.md`](docs/架构与功能逻辑.md) | 技术方案、模块职责、施工计划 |
+| [`AGENTS.md`](AGENTS.md) | Claude / Codex 协作规则 |
 
-## 两个端
+## 形态
 
-| | 用户端 `EduShift` | 管理端 `EduShiftAdmin` |
-|---|---|---|
-| 给谁 | 排课员 | 管理员本人 |
-| 密钥 | 只有公钥（构建时编译进去） | 持有私钥（口令加密存本机） |
-| 功能 | 导入排班 → 体检 → 导出违规清单 | 生成密钥、签发许可、查台账 |
+**公司内网网页 + 后端服务**。不做认证——内网部署，谁能访问谁能用。
 
-细节见 [`docs/桌面应用与授权.md`](docs/桌面应用与授权.md)，含授权机制能防什么、不能防什么。
-
-## 开发
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate                 # Windows：.venv\Scripts\activate
-pip install -r requirements.txt -r requirements-dev.txt
-QT_QPA_PLATFORM=offscreen pytest          # 106 项
-
-python apps/user/main.py                  # 用户端
-python apps/admin/main.py                 # 管理端
-python apps/user/main.py --selftest       # 不开窗口，只验依赖和公钥
+```
+FastAPI + Jinja2 + HTMX   无 SPA、无 Node 工具链
+SQLite + 文件系统          单机内网，并发个位数
+Docker                     内网服务器起一个容器
 ```
 
-**自动排班**：
-
-```bash
-# 从零重排：拿现有明细当待排清单，时段和主指导员作废重新定
-python tools/schedule.py 排班明细.xlsx --config config/rules.yaml --out 新排班.xlsx
-
-# 修复模式：在原排班上做最小改动（期中调课用）
-python tools/schedule.py 排班明细.xlsx --mode repair --out 修复后.xlsx
-```
-
-输出一个 Excel：总览 / 排班明细 / 看板 / 老师课表 / 问题清单。
-明细页的列名和源表一致，**可以直接喂回体检工具**——排班和体检共用同一套
-配置和权重，所以「比原来好多少」是同一把尺子量出来的。
-
-命令行版体检（不需要界面）：
-
-```bash
-cp config/rules.example.yaml config/rules.yaml     # 改规则只改这个文件
-cp config/centers.example.csv config/centers.csv   # 补上 30 个中心的经纬度
-python tools/geocode_centers.py                   # 默认 OSM，无需 key
-python tools/health_check.py 排班明细.xlsx --config config/rules.yaml --out 违规清单.csv
-```
-
-已有本地配置时不要重复复制模板。坐标查询只补空值，未命中的中心保留为空；
-有部分未命中时退出码为 1，但成功的坐标仍会写入 `config/centers.csv`。
-脚本会拒绝 OSM 返回地名或行政区不匹配的结果，并保存「地图名称」「地图地址」。
-核对这些字段和「定位依据」，为失败或模糊命中的中心补详细地址：社区、地铁站等地名的
-中心点不等于门店位置，尤其不能据此确认两家门店是否就在隔壁。
-两端都有坐标的转场会自动使用「直线估算」，缺坐标的仍会使用粗判。
-核准坐标后可运行 `python tools/travel_matrix.py` 获取免 key 的驾车路线估计；
-它不代表实时路况或高峰通勤实测。
-
-管理端也有命令行版：
-
-```bash
-python tools/admin_license.py keygen --out-dir secrets
-python tools/admin_license.py issue --to "福田分区排课组" --days 365 \
-       --machines <机器指纹> --out 福田.lic
-python tools/admin_license.py inspect 福田.lic
-```
-
-## 打包
-
-```bash
-python tools/embed_pubkey.py --key "<base64 公钥>"     # 只影响用户端
-pyinstaller --noconfirm --clean packaging/user.spec
-pyinstaller --noconfirm --clean packaging/admin.spec
-```
-
-CI 在 macOS arm64 / macOS Intel / Windows x64 三个平台各打两个端。
-需要在仓库 Secret 里配 `LICENSE_PUBLIC_KEY_B64`（**只放公钥**）。
+> 桌面端（PySide6 两端 + Ed25519 授权）已归档到 [`legacy/`](legacy/README.md)，不再维护。
 
 ## 目录
 
-| 路径 | 内容 |
-|---|---|
-| `docs/` | 需求理解、桌面应用与授权 |
-| `config/` | 规则配置与中心坐标表的模板 |
-| `engine/` | 排班引擎：时段运算、通行时间、体检、CP-SAT 求解器、Excel 输出 |
-| `licensing/` | 密钥、许可签发与校验、机器指纹 |
-| `apps/` | 两端界面 |
-| `tools/` | 命令行：体检、签发许可、嵌公钥 |
-| `packaging/` | PyInstaller spec |
-| `tests/` | 106 项测试，含端到端授权链路与地图工具 |
+```
+engine/     求解内核，不依赖任何 UI
+  slots.py      时段代数（重叠、并发组、课间阈值推导）
+  travel.py     转场时间/距离判定，来源优先级与保守兜底
+  inputs.py     从明细表派生团队 / 指导员 / 教室
+  solver.py     CP-SAT 建模与求解
+  health.py     体检：对任意一份排班算违规和得分
+  output.py     写出 xlsx（5 个 sheet）
+  mapapi.py     地图适配（OSM 默认免 key / 高德）
+  coords.py     WGS-84 ↔ GCJ-02 坐标转换
+  data.py       读配置、读排班、派生校区
 
-## 数据与密钥
+tools/      命令行入口
+  health_check.py     体检一份排班
+  schedule.py         求解排班
+  geocode_centers.py  地址 → 经纬度，写回 centers.csv
+  travel_matrix.py    两两驾车时间/里程 → travel.csv
 
-源表含真实姓名与门店信息，不入库。以下均在 `.gitignore`：
-`config/rules.yaml`、`config/centers.csv`、`config/travel.csv`、
-`secrets/`、`*.pem`、`*.lic`、`dist/`、`build/`。
+config/     规则与数据表（真实文件不入库，见 .gitignore）
+tests/      测试
+legacy/     已归档的桌面端与授权体系
+```
+
+## 跑起来
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest
+
+python tools/health_check.py --help
+python tools/schedule.py --help
+```
+
+准备地理数据（各跑一次，之后排班完全离线、不需要网络也不需要 key）：
+
+```bash
+python tools/geocode_centers.py    # 默认走 OSM，免 key
+python tools/travel_matrix.py
+```
+
+## 数据安全
+
+原始表含 106 位真实指导员姓名和门店信息，**不入库**。
+`.gitignore` 覆盖 `*.xlsx`、`config/rules.yaml`、`config/centers.csv`、`config/travel.csv`、`secrets/`。

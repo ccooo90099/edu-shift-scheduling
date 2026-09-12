@@ -1,0 +1,4 @@
+# 归档代码的依赖，不装也不影响主项目。
+cryptography>=41.0
+PySide6-Essentials>=6.6
+pyinstaller>=6.3
