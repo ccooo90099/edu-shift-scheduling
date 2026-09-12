@@ -21,6 +21,25 @@ def overlaps(a, b):
     return a[0] < b[1] and b[0] < a[1]
 
 
+def concurrent_slot_groups(slot_texts):
+    """在各开始时刻取同时进行的时段组，供容量约束和历史峰值共用。
+
+    重叠集合只会在课程开始/结束时变化；只需检查开始时刻即可捕获峰值。
+    区间按 [开始, 结束) 处理，首尾相接的课程可以复用教室。
+    """
+    intervals = {slot: parse_slot(slot) for slot in slot_texts}
+    if any(end <= start for start, end in intervals.values()):
+        raise ValueError("时段结束时间必须晚于开始时间")
+    groups, seen = [], set()
+    for instant in sorted({start for start, _ in intervals.values()}):
+        group = tuple(slot for slot, (start, end) in intervals.items()
+                      if start <= instant < end)
+        if group not in seen:
+            groups.append(group)
+            seen.add(group)
+    return groups
+
+
 def make_gap_counter(slot_texts):
     """返回 gap_count(a, b)：a 结束到 b 开始之间，还塞得下几个别的时段。
 

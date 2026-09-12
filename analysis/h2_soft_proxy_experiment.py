@@ -12,7 +12,7 @@ python analysis/h2_soft_proxy_experiment.py --original 原排班.xlsx \
 运行时应使用协作消息中SHA-256匹配的106团队输入；该实验不能证明普遍收敛速度，
 也不能证明物理教室可行或新业务S8已实现。未知物理数据明确保留，不能当成0问题。
 """
-import sys,json,hashlib,platform,time,argparse
+import sys,json,hashlib,platform,time,argparse,subprocess
 from pathlib import Path
 from copy import deepcopy
 from collections import defaultdict,Counter
@@ -72,6 +72,12 @@ def main():
     ap.add_argument('--incumbent-bound', action='store_true', help='先验证已有解，三组都加同一可行目标上界')
     args=ap.parse_args()
     if args.time_limit<=0:ap.error('time-limit must be positive')
+    # 此脚本的研究问题要求固定旧H3；修复容量后不得仍输出“旧模型”诊断。
+    baseline='bb7aafddb47139098597cff6c960aec1b1800eeb'
+    check=subprocess.run(['git','diff','--quiet',baseline,'--','engine'],
+                         cwd=Path(__file__).resolve().parents[1],capture_output=True)
+    if check.returncode:
+        ap.error('此历史诊断要求engine与bb7aafd一致；请在对应历史工作区运行，不要混用已修复的模型')
     paths={k:Path(getattr(args,k)) for k in ('original','solved','config')}
     cfg=load_config(paths['config']); cfg['地理']['中心坐标表']='';cfg['地理']['通行时间表']=''
     df=load_schedule(paths['original'],cfg)
