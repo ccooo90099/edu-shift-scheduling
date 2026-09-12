@@ -20,7 +20,7 @@ import time
 import urllib.parse
 import urllib.request
 
-from .coords import GCJ02, WGS84
+from ...domain.model.venue import Datum
 
 AMAP_GEOCODE = "https://restapi.amap.com/v3/geocode/geo"
 AMAP_DISTANCE = "https://restapi.amap.com/v3/distance"
@@ -54,7 +54,7 @@ class AMap:
     """高德。免费版有 QPS 限制，所以每次调用之间留了间隔。"""
 
     name = "amap"
-    datum = GCJ02
+    datum = Datum.GCJ02
     needs_key = True
 
     def __init__(self, key, city="深圳", pause=0.25, fetch=_get):
@@ -122,7 +122,7 @@ class OSM:
     """
 
     name = "osm"
-    datum = WGS84
+    datum = Datum.WGS84
     needs_key = False
 
     def __init__(self, key=None, city="深圳", pause=1.1, fetch=_get):

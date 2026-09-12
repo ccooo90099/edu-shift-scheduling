@@ -27,27 +27,37 @@ Docker                     内网服务器起一个容器
 ## 目录
 
 ```
-engine/     求解内核，不依赖任何 UI
-  slots.py      时段代数（重叠、并发组、课间阈值推导）
-  travel.py     转场时间/距离判定，来源优先级与保守兜底
-  inputs.py     从明细表派生团队 / 指导员 / 教室
-  solver.py     CP-SAT 建模与求解
-  health.py     体检：对任意一份排班算违规和得分
-  output.py     写出 xlsx（5 个 sheet）
-  mapapi.py     地图适配（OSM 默认免 key / 高德）
-  coords.py     WGS-84 ↔ GCJ-02 坐标转换
-  data.py       读配置、读排班、派生校区
+src/scheduling/            分层架构，依赖方向自外向内
+  domain/                  领域层 —— 零框架依赖，有自动化断言守着
+    model/                 时段、时段表、课程体系、期位、人群与报读组合、
+                           团队、指导员、场地、学年日历
+    policy/                连堂三档、转场口径、降级链、黄金时段、权重
+    service/               排班问题与评分、体检、数据就绪度
+    repository.py          仓储接口（Protocol），依赖倒置的边界
+  application/             用例编排 —— CLI 与网页共用的唯一通道
+    use_cases/             建问题、跑求解、体检、就绪度检查
+  infrastructure/          实现领域定义的接口
+    persistence/sqlite.py  四个仓储
+    solver/cpsat.py        CP-SAT 适配（不含任何业务规则）
+    spreadsheet/           xlsx 读入与导出
+    maps/                  坐标系换算、通行时间表、地图 provider
+  interfaces/web/          FastAPI + Jinja2 + HTMX
 
-tools/      命令行入口
-  health_check.py     体检一份排班
-  schedule.py         求解排班
-  geocode_centers.py  地址 → 经纬度，写回 centers.csv
-  travel_matrix.py    两两驾车时间/里程 → travel.csv
-
-config/     规则与数据表（真实文件不入库，见 .gitignore）
-tests/      测试
-legacy/     已归档的桌面端与授权体系
+tools/                     命令行入口，与网页走同一条应用层
+config/                    规则与数据表（真实文件不入库）
+tests/                     domain / solver / infrastructure / web / 端到端
+legacy/                    已归档：桌面端、授权体系、绑定旧模型的实验脚本
 ```
+
+### 为什么这样分
+
+业务规则经过十几轮澄清，期间推翻过 7 条推断。多数错误形式一样：
+**某个业务概念在代码里是字符串或元组，于是两处对它的理解可以悄悄分叉。**
+转场次数两处各自实现（同一份排班报出 19 和 25）、学生撮用年级推全科
+（把刚降级的约束从后门放回来）、未知坐标系静默当 WGS-84（偏几百米不报错）。
+
+所以分层的价值不在好看，在于**把业务语言变成构造期就能挡住错误的类型**。
+详见 [`src/scheduling/domain/README.md`](src/scheduling/domain/README.md)。
 
 ## 跑起来
 

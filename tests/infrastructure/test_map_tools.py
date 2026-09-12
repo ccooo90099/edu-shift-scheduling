@@ -10,8 +10,10 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from engine import mapapi   # noqa: E402
-from engine.travel import Travel, load_geo   # noqa: E402
+from scheduling.infrastructure.maps import providers as mapapi   # noqa: E402
+from scheduling.infrastructure.maps.travel_table import TravelTable  # noqa: E402
+from scheduling.domain.model.venue import Center, Coordinate, Datum  # noqa: E402
+from scheduling.domain.policy.travel import TravelSource  # noqa: E402
 
 
 def test_地图请求头可以通过真实HTTP编码(monkeypatch):
@@ -143,14 +145,12 @@ def test_生成通行时间表_并且排班读得到(centers_csv, fake_provider,
     assert all(r["source"] == "fake" for r in rows)
     assert all(float(r["minutes"]) > 0 and float(r["km"]) > 0 for r in rows)
 
-    # 排班侧读得到，且来源标成「地图」
-    cfg = {"地理": {"中心坐标表": str(centers_csv), "通行时间表": str(out),
-                    "判定方式": "时间", "时间": {"安全余量_分钟": 0}}}
-    coords, table = load_geo(cfg)
-    campus = {n: n for n in POINTS}
-    travel = Travel(cfg, coords, table, campus, dict.fromkeys(POINTS, "福田区"))
-    assert travel.source("石厦科学", "百花科学") == "地图"
-    assert not travel.used_fallback
+    # 排班侧读得到，且来源标成「地图」而不是估算或档位
+    centers = {n: Center(n, Center.campus_of(n), "福田区",
+                         coordinate=Coordinate(114.0, 22.5, Datum.WGS84))
+               for n in POINTS}
+    travel = TravelTable.load(centers, out)
+    assert travel.between("石厦科学", "百花科学").source is TravelSource.MAP
 
 
 def test_没有坐标就拒绝生成矩阵(tmp_path, fake_provider, monkeypatch):
@@ -196,41 +196,10 @@ def test_amap缺key直接报错不往下跑(centers_csv, monkeypatch, tmp_path):
     assert not (tmp_path / "t.csv").exists()
 
 
-def test_连堂规则填自动时用推算值(tmp_path):
-    """配置写「自动」，引擎要真的去推，而不是当成 None 放行一切。"""
-    import sys, os
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from engine.health import _check_adjacency, Report
-
-    import pandas as pd
-    from engine.slots import parse_slot
-
-    def row(校区, 产品, 时段, 团队ID):
-        start, end = parse_slot(时段)
-        return {"段次": "段次1", "周": "星期六", "校区": 校区, "程度": "S7",
-                "团队类型": "LI", "产品": 产品, "首次服务时间": 时段,
-                "_start": start, "_end": end, "团队ID": 团队ID, "主指导员": "某"}
-
-    # 甲校区：课间 20 分钟相接；乙校区：跨午休 90 分钟
-    df = pd.DataFrame([
-        row("甲", "编程理论", "08:10-10:10", 1),
-        row("甲", "双语文化", "10:30-12:30", 2),
-        row("乙", "编程理论", "10:30-12:30", 3),
-        row("乙", "双语文化", "14:00-16:00", 4),
-    ])
-    cfg = {"时段": ["08:10-10:10", "10:30-12:30", "13:30-15:30",
-                    "14:00-16:00", "16:20-18:20", "18:30-20:30"],
-           "连堂": {"分组范围": ["校区", "程度", "团队类型"],
-                    "规则": [{"名称": "编程双语连堂", "产品": ["编程理论", "双语文化"],
-                              "强度": "硬", "允许中间隔": 0, "最大间隙_分钟": "自动"}]}}
-
-    rep = Report()
-    _check_adjacency(df, cfg, rep)
-    名称, 强度, 总数, 不夹课, 真挨着, 阈值 = rep.连堂[0]
-    assert 阈值 == 20                      # 「自动」被解析成了 20，不是 None
-    assert 总数 == 2 and 不夹课 == 2       # 两对中间都没夹课
-    assert 真挨着 == 1                     # 但只有甲校区那对在 20 分钟内
-    assert any("90 分钟" in f.问题 for f in rep.findings)   # 乙校区被点名
+# 原「连堂规则填自动时用推算值」一测已删除：它断言「跨午休不算挨着」，
+# 而业务定案是**跨午休也算连堂**（次优档）。新语义见
+# tests/domain/test_business_rules.py::test_连堂三档_跨午休算连堂而不是不连堂，
+# 「自动阈值真的被推导出来」见 test_timeslot.py::test_从时段表自动推出课间阈值是20分钟。
 
 
 # ── 自动反查：内部中心名查不到时的兜底 ──────────────────────────

@@ -30,7 +30,9 @@ import csv
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _ROOT)
+sys.path.insert(0, os.path.join(_ROOT, "src"))
 
 try:
     from console import force_utf8
@@ -41,7 +43,7 @@ except ImportError:          # console.py 缺失时也不该崩 —— 它只是
                 _stream.reconfigure(encoding="utf-8", errors="replace")
             except (AttributeError, ValueError, OSError):
                 pass
-from engine.mapapi import MapError, make   # noqa: E402
+from scheduling.infrastructure.maps.providers import MapError, make   # noqa: E402
 
 FIELDS = ["中心", "校区", "区域", "地址", "经度", "纬度", "坐标系", "定位依据",
           "地图名称", "地图地址", "定位精度"]

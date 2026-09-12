@@ -55,4 +55,4 @@ def test_缺了console模块也不该崩(tmp_path):
     combined = result.stdout + result.stderr
     assert "ModuleNotFoundError" not in combined, combined[-600:]
     assert "UnicodeEncodeError" not in combined, combined[-600:]
-    assert "排班体检" in combined                 # 帮助文本正常打出来了
+    assert "体检一份排班" in combined              # 帮助文本正常打出来了

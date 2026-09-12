@@ -12,7 +12,9 @@ import csv
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _ROOT)
+sys.path.insert(0, os.path.join(_ROOT, "src"))
 
 try:
     from console import force_utf8
@@ -23,8 +25,8 @@ except ImportError:          # console.py 缺失时也不该崩 —— 它只是
                 _stream.reconfigure(encoding="utf-8", errors="replace")
             except (AttributeError, ValueError, OSError):
                 pass
-from engine.mapapi import MapError, make   # noqa: E402
-from engine.travel import TRAVEL_FIELDS   # noqa: E402
+from scheduling.infrastructure.maps.providers import MapError, make   # noqa: E402
+from scheduling.infrastructure.maps.travel_table import TRAVEL_FIELDS   # noqa: E402
 
 
 def load_centers(path):
