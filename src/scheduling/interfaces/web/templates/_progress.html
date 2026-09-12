@@ -1,0 +1,39 @@
+{# HTMX 轮询的片段。任务终结后返回的片段不再带 hx-* 属性，
+   前端自然停下来 —— 不需要额外的「停止轮询」逻辑。 #}
+<div id="progress" class="progress"
+     {% if not task.status.is_terminal %}
+     hx-get="/tasks/{{ task.id }}/progress"
+     hx-trigger="every 2s"
+     hx-swap="outerHTML"
+     {% endif %}>
+
+  <div class="progress-head">
+    <span class="badge badge-{{ 'ok' if task.status.value == 'done'
+                                else 'bad' if task.status.value == 'failed'
+                                else 'run' }}">{{ task.status.label }}</span>
+    <span class="elapsed">已用 {{ '%.1f' % task.elapsed_seconds }} 秒</span>
+  </div>
+
+  {% if task.solver_status %}
+  <dl class="kv">
+    <dt>求解状态</dt>
+    <dd>
+      <strong>{{ task.solver_status }}</strong>
+      <span class="gap">{{ task.gap_hint }}</span>
+    </dd>
+    {% if task.objective is not none %}
+    <dt>目标值</dt><dd>{{ '%.0f' % task.objective }}</dd>
+    <dt>下界</dt><dd>{{ '%.0f' % task.best_bound }}</dd>
+    {% endif %}
+    <dt>没排上</dt><dd>{{ task.unplaced }} 个团队</dd>
+  </dl>
+  {% endif %}
+
+  {% if task.notes %}
+  <ul class="notes">
+    {% for n in task.notes %}<li>{{ n }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if task.error %}<pre class="error">{{ task.error }}</pre>{% endif %}
+</div>

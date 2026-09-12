@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}中心 · 排班系统{% endblock %}
+{% block content %}
+{{ ui.page_title('中心与教室', '中心 ≠ 校区：百花科学与百花文学是同一校区的两栋楼') }}
+
+{{ ui.filter_tabs(filter, [('', '全部'),
+                           ('missing-coordinate', '缺坐标'),
+                           ('estimated-rooms', '教室数为估计值')]) }}
+
+<section class="card">
+  <h2>新增 / 修改</h2>
+  <form method="post" action="/centers" class="form-row">
+    {{ ui.field('中心名', 'name', required=true, hint='去掉科学/文学后缀就是校区名') }}
+    {{ ui.field('校区', 'campus', hint='留空则自动推导') }}
+    {{ ui.field('区域', 'region') }}
+    {{ ui.field('地址', 'address', hint='填详细地址能提高坐标自动反查的命中率') }}
+    {{ ui.field('教室数', 'rooms', type='number', hint='仅新建时生效，会标记为估计值') }}
+    <button type="submit">保存</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>清单（{{ centers|length }}）</h2>
+  {% if centers %}
+  <table>
+    <thead><tr>
+      <th>中心</th><th>校区</th><th>区域</th><th>教室</th><th>坐标</th><th>补录</th>
+    </tr></thead>
+    <tbody>
+      {% for c in centers %}
+      <tr>
+        <td>{{ c.name }}</td>
+        <td>{{ c.campus }}</td>
+        <td>{{ c.region or '—' }}</td>
+        <td>
+          {{ c.room_count }}
+          {% if c.rooms_are_estimated %}{{ ui.badge('估计', 'warn') }}{% endif %}
+        </td>
+        <td>
+          {% if c.has_coordinate %}
+            {{ ui.badge(c.coordinate.datum.value, 'ok') }}
+            <small>{{ c.located_by or '—' }}</small>
+          {% else %}
+            {{ ui.badge('缺', 'bad') }}
+          {% endif %}
+        </td>
+        <td>
+          <form method="post" action="/centers/{{ c.name }}/coordinate" class="inline">
+            <select name="map_source">
+              {% for s in map_sources %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+            </select>
+            <input name="longitude" placeholder="经度" size="9" required>
+            <input name="latitude" placeholder="纬度" size="9" required>
+            <button type="submit">存</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="note">
+    <strong>选地图来源，不用选坐标系。</strong>
+    高德和腾讯给 GCJ-02，百度给 BD-09（在 GCJ-02 上<em>再偏一次</em>，不是同一个），
+    天地图和 OpenStreetMap 给 WGS-84。三者在深圳两两相差 300–700 米，
+    系统按来源自动折算 —— 认不出的来源会直接报错，不猜。
+  </p>
+  {% else %}
+    {{ ui.empty_state('还没有中心', '先在上面加一个，或者从排班明细导入') }}
+  {% endif %}
+</section>
+{% endblock %}

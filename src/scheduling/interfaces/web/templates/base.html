@@ -1,0 +1,29 @@
+{% import "_macros.html" as ui %}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}排班系统{% endblock %}</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/htmx/1.9.12/htmx.min.js"></script>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <nav class="topnav">
+    <a class="brand" href="/">排班系统</a>
+    <a href="/centers">中心</a>
+    <a href="/instructors">指导员</a>
+    <a href="/calendar">学年日历</a>
+    <span class="spacer"></span>
+    <span class="env">内网 · 无需登录</span>
+  </nav>
+
+  {{ ui.readiness_banner(readiness) }}
+
+  <main>{% block content %}{% endblock %}</main>
+
+  <footer>
+    <p>数据留在内网。原始表含真实姓名与门店信息，不入库。</p>
+  </footer>
+</body>
+</html>

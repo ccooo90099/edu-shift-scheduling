@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}指导员 · 排班系统{% endblock %}
+{% block content %}
+{{ ui.page_title('指导员', '资质是硬门槛：106 人里 103 人只教一个产品') }}
+
+{{ ui.filter_tabs(filter, [('', '全部'), ('unconfigured', '缺配置')]) }}
+
+<section class="card">
+  <h2>单个编辑</h2>
+  <form method="post" action="/instructors" class="form-row">
+    {{ ui.field('姓名', 'name', required=true) }}
+    {{ ui.field('可教产品', 'products', hint='逗号分隔，如：编程理论,双语文化') }}
+    {{ ui.field('可去中心', 'centers', hint='逗号分隔。留空 = 不限') }}
+    {{ ui.field('不可用时段', 'unavailable', hint='逗号分隔，如：18:30-20:30') }}
+    {{ ui.field('单日最多节数', 'max_sessions', value='4', type='number') }}
+    <button type="submit">保存</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>批量编辑</h2>
+  <p class="note">整个校区的老师统一加一条限制、一批新老师统一设可教产品，用这里。</p>
+  <form method="post" action="/instructors/bulk" class="form-row">
+    {{ ui.field('姓名', 'names', required=true, hint='逗号分隔') }}
+    {{ ui.field('可教产品', 'products', hint='留空则不改这一项') }}
+    {{ ui.field('单日最多节数', 'max_sessions', type='number', hint='留空或 0 则不改') }}
+    <button type="submit">批量应用</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>清单（{{ instructors|length }}）</h2>
+  {% if instructors %}
+  <table>
+    <thead><tr>
+      <th>姓名</th><th>可教产品</th><th>可去中心</th><th>不可用时段</th><th>单日上限</th>
+    </tr></thead>
+    <tbody>
+      {% for i in instructors %}
+      <tr class="{{ '' if i.is_configured else 'row-warn' }}">
+        <td>{{ i.name }}</td>
+        <td>
+          {% if i.teachable %}
+            {{ i.teachable | map(attribute='name') | sort | join('、') }}
+          {% else %}{{ ui.badge('未配置', 'bad') }}{% endif %}
+        </td>
+        <td>{{ i.allowed_centers | sort | join('、') if i.allowed_centers else '不限' }}</td>
+        <td>{{ i.unavailable_slots | map(attribute='text') | sort | join('、') or '—' }}</td>
+        <td>{{ i.max_sessions_per_day }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    {{ ui.empty_state('还没有指导员', '缺配置的人排班时约束会静默落空') }}
+  {% endif %}
+</section>
+{% endblock %}

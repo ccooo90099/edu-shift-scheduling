@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+{{ ui.page_title('排班任务', '上传团队清单，选场景，跑一次求解') }}
+
+<section class="card">
+  <h2>新建任务</h2>
+  <form method="post" action="/tasks" enctype="multipart/form-data" class="form-row">
+    {{ ui.field('任务名称', 'name', required=true) }}
+    {{ ui.select_field('场景', 'season', ['寒暑假', '春秋季'],
+                       hint='两者排课逻辑相同，区别只在时段表和一个批次由哪些天组成') }}
+    <label class="field">
+      <span class="field-label">团队清单</span>
+      <input type="file" name="upload" accept=".xlsx">
+      <span class="field-hint">xlsx。不传也能建任务，之后再补</span>
+    </label>
+    <button type="submit">建任务</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>最近的任务</h2>
+  {% if tasks %}
+  <table>
+    <thead><tr>
+      <th>名称</th><th>场景</th><th>任务状态</th><th>求解状态</th>
+      <th>没排上</th><th>用时</th>
+    </tr></thead>
+    <tbody>
+      {% for t in tasks %}
+      <tr>
+        <td><a href="/tasks/{{ t.id }}">{{ t.name }}</a></td>
+        <td>{{ t.season }}</td>
+        <td>{{ ui.badge(t.status.label,
+              'ok' if t.status.value == 'done' else
+              'bad' if t.status.value == 'failed' else 'run') }}</td>
+        <td>
+          {% if t.solver_status %}
+            {{ ui.badge(t.solver_status,
+                 'ok' if t.solver_status == 'OPTIMAL' else 'warn') }}
+          {% else %}—{% endif %}
+        </td>
+        <td>{{ t.unplaced }}</td>
+        <td>{{ '%.1f' % t.elapsed_seconds }}s</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    {{ ui.empty_state('还没有任务', '上面建一个') }}
+  {% endif %}
+</section>
+{% endblock %}

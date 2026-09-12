@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ task.name }} · 排班系统{% endblock %}
+{% block content %}
+{{ ui.page_title(task.name, task.season) }}
+
+<section class="card">
+  <h2>求解进度</h2>
+  {% include "_progress.html" %}
+</section>
+
+{% if task.score_breakdown %}
+<section class="card">
+  <h2>得分明细</h2>
+  <p class="note">求解目标与体检报告用的是**同一把尺子** —— 两侧各自实现
+     曾让同一份排班报出两个数。</p>
+  <table>
+    <thead><tr><th>项</th><th>数量</th></tr></thead>
+    <tbody>
+      {% for k, v in task.score_breakdown.items() %}
+      <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if task.output_path %}
+<p><a class="btn" href="/tasks/{{ task.id }}/download">下载排班表</a></p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,75 @@
+{# 可复用组件。所有页面共用，改一处全站生效。 #}
+
+{% macro page_title(text, sub='') %}
+<header class="page-head">
+  <h1>{{ text }}</h1>
+  {% if sub %}<p class="sub">{{ sub }}</p>{% endif %}
+</header>
+{% endmacro %}
+
+
+{% macro readiness_banner(issues) %}
+{# 顶部常驻告警条。
+   为什么常驻而不是一次性提示：缺坐标、缺资质都**不会报错**，求解照样出
+   结果，只是悄悄退化。用户会拿到一份看起来正常的排班，实际上路上时间
+   全是猜的。所以要一直喊到补完为止。 #}
+{% if issues %}
+<div class="banner-stack">
+  {% for i in issues %}
+  <div class="banner banner-{{ i.severity }}">
+    <span class="banner-icon">{{ '⚠' if i.severity == 'warning' else 'ℹ' }}</span>
+    <div class="banner-body">
+      <strong>{{ i.summary }}</strong>
+      <span class="banner-why">不管的话：{{ i.consequence }}</span>
+    </div>
+    {% if i.fix_route %}<a class="banner-fix" href="{{ i.fix_route }}">去补齐</a>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endmacro %}
+
+
+{% macro empty_state(text, hint='') %}
+<div class="empty">
+  <p>{{ text }}</p>
+  {% if hint %}<p class="hint">{{ hint }}</p>{% endif %}
+</div>
+{% endmacro %}
+
+
+{% macro field(label, name, value='', type='text', hint='', required=false) %}
+<label class="field">
+  <span class="field-label">{{ label }}{% if required %} <em>*</em>{% endif %}</span>
+  <input type="{{ type }}" name="{{ name }}" value="{{ value }}"
+         {% if required %}required{% endif %}>
+  {% if hint %}<span class="field-hint">{{ hint }}</span>{% endif %}
+</label>
+{% endmacro %}
+
+
+{% macro select_field(label, name, options, selected='', hint='') %}
+<label class="field">
+  <span class="field-label">{{ label }}</span>
+  <select name="{{ name }}">
+    {% for o in options %}
+    <option value="{{ o }}" {% if o == selected %}selected{% endif %}>{{ o }}</option>
+    {% endfor %}
+  </select>
+  {% if hint %}<span class="field-hint">{{ hint }}</span>{% endif %}
+</label>
+{% endmacro %}
+
+
+{% macro badge(text, kind='neutral') %}
+<span class="badge badge-{{ kind }}">{{ text }}</span>
+{% endmacro %}
+
+
+{% macro filter_tabs(current, tabs) %}
+<nav class="tabs">
+  {% for value, label in tabs %}
+  <a href="?filter={{ value }}" class="tab {% if current == value %}on{% endif %}">{{ label }}</a>
+  {% endfor %}
+</nav>
+{% endmacro %}
