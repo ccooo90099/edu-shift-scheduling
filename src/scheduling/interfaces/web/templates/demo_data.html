@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}示例数据 · 排班系统{% endblock %}
+{% block content %}
+<script>
+  function busy(form, text) {
+    var b = form.querySelector('button[type=submit]');
+    if (!b) return;
+    b.disabled = true;
+    b.innerHTML = '<span class="spinner" style="border-color:rgba(255,255,255,.35);' +
+                  'border-top-color:#fff"></span> ' + text;
+    setTimeout(function(){ form.submit(); }, 0);
+  }
+</script>
+
+{{ ui.page_title('示例数据', '点「生成」之前先看看里面是什么') }}
+
+<section class="card">
+  <h2>概览</h2>
+  <dl class="kv">
+    <dt>中心</dt><dd>{{ centers|length }} 个（含 {{ n_literature }} 个文学楼）</dd>
+    <dt>教室</dt><dd>{{ centers|sum(attribute='room_count') }} 间</dd>
+    <dt>指导员</dt><dd>{{ instructors|length }} 位</dd>
+    <dt>团队</dt><dd>{{ teams|length }} 个</dd>
+  </dl>
+  <p class="note">
+    <strong>结构照着真实排班表来</strong>，这几条会实际影响求解结果：
+    文学楼只上文学美育、S7 不开物理化学、指导员以单产品为主
+    （真实表 106 人里 103 人只教一科）。
+    <strong>名字全是编的</strong> —— 中心叫「示范X」，老师叫「示教NN」。
+  </p>
+  <div class="actions">
+    <form method="post" action="/tasks/demo" onsubmit="busy(this,'正在生成并求解…')">
+      <button type="submit">就用这份数据排一次班</button>
+    </form>
+  </div>
+</section>
+
+<section class="card">
+  <h2>团队分布</h2>
+  <table>
+    <thead><tr><th>科目</th><th class="num">团队数</th></tr></thead>
+    <tbody>
+      {% for k, v in by_product.items() %}
+      <tr><td>{{ k }}</td><td class="num">{{ v }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>中心（{{ centers|length }}）</h2>
+  <table>
+    <thead><tr>
+      <th>中心</th><th>校区</th><th>区域</th><th class="num">教室</th><th>坐标</th>
+    </tr></thead>
+    <tbody>
+      {% for c in centers %}
+      <tr>
+        <td><strong>{{ c.name }}</strong></td>
+        <td>{{ c.campus }}</td>
+        <td>{{ c.region }}</td>
+        <td class="num">{{ c.room_count }}</td>
+        <td><small>{{ '%.4f, %.4f' % (c.coordinate.longitude, c.coordinate.latitude) }}</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>指导员（{{ instructors|length }}）</h2>
+  <table>
+    <thead><tr><th>姓名</th><th>可教</th><th>可去中心</th></tr></thead>
+    <tbody>
+      {% for i in instructors %}
+      <tr>
+        <td><strong>{{ i.name }}</strong></td>
+        <td>{{ i.teachable | map(attribute='name') | sort | join('、') }}</td>
+        <td><small>{{ i.allowed_centers | sort | join('、') or '不限' }}</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>团队清单（前 30 / {{ teams|length }}）</h2>
+  <table>
+    <thead><tr>
+      <th>团队</th><th>中心</th><th>程度</th><th>科目</th><th>层级</th><th class="num">人数</th>
+    </tr></thead>
+    <tbody>
+      {% for t in teams[:30] %}
+      <tr>
+        <td><small>{{ t['团队名称'] }}</small></td>
+        <td><small>{{ t['中心'] }}</small></td>
+        <td>{{ t['程度'] }}</td>
+        <td>{{ t['产品'] }}</td>
+        <td>{{ t['团队类型'] }}</td>
+        <td class="num">{{ t['人数'] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

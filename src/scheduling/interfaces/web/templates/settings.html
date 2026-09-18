@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}配置 · 排班系统{% endblock %}
+{% block content %}
+{{ ui.page_title('配置', '排班用到的所有基础数据都在这里改') }}
+
+<section class="card">
+  <h2>配置项</h2>
+  <table>
+    <thead><tr>
+      <th>项目</th><th>说明</th><th>现状</th><th>待办</th>
+    </tr></thead>
+    <tbody>
+      {% for it in items %}
+      <tr>
+        <td><a href="{{ it.route }}"><strong>{{ it.title }}</strong></a></td>
+        <td><small>{{ it.desc }}</small></td>
+        <td><small>{{ it.stat }}</small></td>
+        <td>
+          {% if it.todo %}{{ ui.badge(it.todo, 'warn') }}
+          {% else %}{{ ui.badge('齐了', 'ok') }}{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="note">
+    缺数据不会让排班报错，只会让它<strong>悄悄退化</strong> ——
+    比如缺坐标时跨中心的路上时间只能粗判。所以缺什么会一直挂在页面顶部提醒。
+  </p>
+</section>
+{% endblock %}

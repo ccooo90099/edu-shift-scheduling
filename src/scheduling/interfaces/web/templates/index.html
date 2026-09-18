@@ -1,95 +1,86 @@
 {% extends "base.html" %}
 {% block content %}
 <script>
-  // 点了之后立刻变成「在干活」——生成清单和启动求解要一两秒，
-  // 这段时间没反馈的话人会以为没点上，然后再点一次。
   function busy(form, text) {
     var b = form.querySelector('button[type=submit]');
     if (!b) return;
     b.disabled = true;
-    b.innerHTML = '<span class="spinner" style="border-top-color:#fff;' +
-                  'border-color:rgba(255,255,255,.35);border-top-color:#fff">' +
-                  '</span> ' + text;
+    b.innerHTML = '<span class="spinner" style="border-color:rgba(255,255,255,.35);' +
+                  'border-top-color:#fff"></span> ' + text;
     setTimeout(function(){ form.submit(); }, 0);
   }
 </script>
-{{ ui.page_title('排班任务', '上传团队清单 → 自动求解 → 看板与 Excel') }}
+
+{{ ui.page_title('排班', '这里只看结果。要改中心、老师、教室这些，去' +
+                 '「配置」') }}
+
+{% if days %}
+<div class="tabs" style="margin-bottom:16px">
+  {% for key, label in ranges.items() %}
+  <a href="?scope={{ key }}" class="tab {{ 'on' if scope == key }}">{{ label }}</a>
+  {% endfor %}
+  <span style="flex:1"></span>
+  <span class="tab" style="border:0;background:none;color:var(--muted)">
+    {{ start }} ~ {{ end }} · 共 {{ total_lessons }} 节课
+  </span>
+</div>
+
+{% for d in days %}
+<section class="card">
+  <h2>
+    {{ d.day }} {{ d.weekday }}
+    {% if d.is_today %}{{ ui.badge('今天', 'ok') }}{% endif %}
+    <span style="float:right;font-weight:400;color:var(--muted)">{{ d.count }} 节</span>
+  </h2>
+  <div class="board-wrap">
+    <table class="board">
+      <thead><tr>
+        <th>校区</th>
+        {% for s in d.slots %}<th>{{ s }}</th>{% endfor %}
+      </tr></thead>
+      <tbody>
+        {% for campus, slots in d.by_campus().items() %}
+        <tr>
+          <td>{{ campus }}</td>
+          {% for s in d.slots %}
+          <td>
+            {% for l in slots.get(s, []) %}
+            <span class="cellitem">{{ l.label }}</span>
+            {% endfor %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endfor %}
+
+<p class="note" style="margin:0 0 24px">
+  格子里是 <code>程度/层级/科目/指导员</code>。
+  结果来自任务「<a href="/tasks/{{ task.id }}">{{ task.name }}</a>」。
+</p>
+
+{% else %}
 
 <section class="card">
-  <h2>先看个结果</h2>
-  <p class="note" style="margin-bottom:12px">
-    没有现成的表也能看。点一下会现造一份<strong>模拟清单</strong>直接开算 ——
-    结构照着真实那份排班表来（文学楼只上文学美育、S7 不开物理化学、
+  <h2>还没有可展示的排班</h2>
+  <p class="note" style="margin-bottom:16px">{{ why_empty }}</p>
+
+  <div class="actions" style="margin-top:0">
+    <form method="post" action="/tasks/demo" onsubmit="busy(this,'正在生成并求解…')">
+      <button type="submit">生成示例数据并排一次班</button>
+    </form>
+    <a class="btn ghost" href="/demo-data">先看看示例数据有哪些</a>
+    <a class="btn ghost" href="/tasks">用自己的表</a>
+  </div>
+
+  <p class="note">
+    示例数据的结构照着真实排班表来（文学楼只上文学美育、S7 不开物理化学、
     指导员以单产品为主），<strong>名字全是编的</strong>。
   </p>
-  <form method="post" action="/tasks/demo" onsubmit="busy(this,'正在生成并求解…')">
-    <button type="submit">一键跑示例排班</button>
-  </form>
 </section>
 
-<section class="card">
-  <h2>用自己的表</h2>
-  <form method="post" action="/tasks" enctype="multipart/form-data" class="form-row">
-    {{ ui.field('任务名称', 'name', required=true, hint='方便自己认，随便起') }}
-    {{ ui.select_field('场景', 'season', ['寒暑假', '春秋季'],
-                       hint='两者排课逻辑相同，区别只在时段表') }}
-    <label class="field">
-      <span class="field-label">团队清单 <em>*</em></span>
-      <input type="file" name="upload" accept=".xlsx" required>
-      <span class="field-hint">xlsx。要有 中心/程度/产品/团队类型 等列</span>
-    </label>
-    <button type="submit" onclick="busy(this.form,'正在上传并求解…')">建任务并开始求解</button>
-  </form>
-  <p class="note">
-    建完就会在后台开始算，进度自动刷新。求解可能要一两分钟 ——
-    界面会如实显示是<strong>已证明最优</strong>还是<strong>只是找到了一个解</strong>。
-  </p>
-</section>
-
-<section class="card">
-  <h2>任务（{{ tasks|length }}）</h2>
-  {% if tasks %}
-  <table>
-    <thead><tr>
-      <th>名称</th><th>场景</th><th>状态</th><th>求解结果</th>
-      <th class="num">没排上</th><th class="num">用时</th><th></th>
-    </tr></thead>
-    <tbody>
-      {% for t in tasks %}
-      <tr>
-        <td>
-          <a href="/tasks/{{ t.id }}"><strong>{{ t.name }}</strong></a>
-          <span class="cell-sub">{{ t.created_at.strftime('%m-%d %H:%M') }}</span>
-        </td>
-        <td>{{ t.season }}</td>
-        <td>{{ ui.badge(t.status.label,
-              'ok' if t.status.value == 'done' else
-              'bad' if t.status.value == 'failed' else 'run') }}</td>
-        <td>
-          {% if t.solver_status %}
-            {{ ui.badge('已证明最优' if t.solver_status == 'OPTIMAL' else t.solver_status,
-                 'ok' if t.solver_status == 'OPTIMAL' else 'warn') }}
-          {% elif t.error %}
-            <small>{{ t.error[:40] }}</small>
-          {% else %}<small>—</small>{% endif %}
-        </td>
-        <td class="num">
-          {% if t.status.value == 'done' %}
-            {{ t.unplaced }}{% if t.unplaced %} ⚠{% endif %}
-          {% else %}<small>—</small>{% endif %}
-        </td>
-        <td class="num"><small>{{ '%.0f' % t.elapsed_seconds }}s</small></td>
-        <td>
-          {% if t.output_path %}
-          <a href="/tasks/{{ t.id }}/board">看板</a>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-    {{ ui.empty_state('还没有任务', '上传一份团队清单就能开始') }}
-  {% endif %}
-</section>
+{% endif %}
 {% endblock %}

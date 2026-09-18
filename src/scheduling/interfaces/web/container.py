@@ -13,9 +13,16 @@ from ...application.use_cases.check_readiness import CheckReadiness
 from ...application.use_cases.run_health_check import RunHealthCheck
 from ...application.use_cases.run_solve import RunSolve
 from ...infrastructure.spreadsheet.export import write_workbook
+from ...infrastructure.spreadsheet import result_json
 from ...infrastructure.persistence.sqlite import (
     SqliteCalendarRepository, SqliteCenterRepository,
     SqliteInstructorRepository, SqliteTaskRepository, connect)
+
+
+def _export_both(path, teams, report, season, outcome):
+    """xlsx 给人下载，json 给网页按日期展开 —— 同一次结果写两份。"""
+    write_workbook(path, teams, report, season, outcome)
+    result_json.dump(Path(path).with_suffix(".json"), teams, season, outcome)
 
 
 @dataclass
@@ -36,7 +43,7 @@ class Container:
         # 显示 FEASIBLE 和与下界的差距，不会把它说成「排好了」。
         return RunSolve(self.tasks, time_limit=float(
             os.environ.get("SCHEDULING_TIME_LIMIT", "120")),
-            workers=2, exporter=write_workbook)
+            workers=2, exporter=_export_both)
 
     @property
     def run_health_check(self) -> RunHealthCheck:

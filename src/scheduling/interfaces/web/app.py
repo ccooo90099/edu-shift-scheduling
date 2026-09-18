@@ -28,6 +28,9 @@ from ...domain.model.timeslot import TimeSlot
 from ...domain.model.venue import Center, Coordinate, MAP_SOURCE_DATUM, Room
 from ...application.use_cases.build_problem import BuildProblem
 from ...application.use_cases.demo_dataset import DemoDataset
+from ...application.use_cases.schedule_view import (
+    RANGES, ScheduleView, date_range)
+from ...infrastructure.spreadsheet import result_json
 from ...application.use_cases.seed_demo import SeedDemo
 from ...domain.model.academic_calendar import AcademicCalendar, Batch
 from ...domain.model.period import Period, Season
@@ -222,11 +225,97 @@ def create_app(container: Container | None = None,
         ctx.setdefault("readiness", c.check_readiness())
         return templates.TemplateResponse(request, template, ctx)
 
-    # ------------------------------------------------------------ 首页
+    # ------------------------------------------------------------ 首页：看排班
+
+    def _latest_result(c: Container):
+        """最近一次成功排班的结果。首页看的就是它。"""
+        for task in c.tasks.list(30):
+            if task.status.value != "done" or not task.output_path:
+                continue
+            side = Path(task.output_path).with_suffix(".json")
+            if side.exists():
+                return task, result_json.load(side)
+        return None, None
 
     @app.get("/", response_class=HTMLResponse)
-    def index(request: Request, c: Container = Depends(get_container)):
-        return render(request, "index.html", tasks=c.tasks.list(20))
+    def index(request: Request, scope: str = "week", on: str = "",
+              c: Container = Depends(get_container)):
+        """首页只做一件事：看排班。改配置去配置中心。"""
+        task, result = _latest_result(c)
+        scope = scope if scope in RANGES else "week"
+        try:
+            anchor = date.fromisoformat(on) if on else None
+        except ValueError:
+            anchor = None
+
+        view = ScheduleView(c.calendars.load())
+        start, end = date_range(scope, anchor)
+        days = view.days_in(result, start, end) if result else []
+        return render(request, "index.html",
+                      task=task, days=days, scope=scope, ranges=RANGES,
+                      start=start, end=end, anchor=anchor or date.today(),
+                      why_empty=view.why_empty(result),
+                      total_lessons=sum(d.count for d in days))
+
+    @app.get("/tasks", response_class=HTMLResponse)
+    def task_list(request: Request, c: Container = Depends(get_container)):
+        return render(request, "tasks.html", tasks=c.tasks.list(30))
+
+    # ------------------------------------------------------------ 配置中心
+
+    @app.get("/settings", response_class=HTMLResponse)
+    def settings(request: Request, c: Container = Depends(get_container)):
+        """所有配置的入口。首页不放这些 —— 看结果和改配置是两件事。"""
+        centers = c.centers.all()
+        instructors = c.instructors.all()
+        cal = c.calendars.load()
+        caps = _load_caps(c)
+        adjacency = normalize_adjacency(_load_adjacency(c))
+        regions = sorted({x.region for x in centers if x.region})
+        items = [
+            {"route": "/centers", "title": "中心与教室",
+             "desc": "中心、校区、区域、坐标、每个中心几间教室",
+             "stat": "%d 个中心 · %d 间教室" % (
+                 len(centers), sum(x.room_count for x in centers)),
+             "todo": ("%d 个缺坐标" % sum(1 for x in centers if not x.has_coordinate)
+                      if any(not x.has_coordinate for x in centers) else "")},
+            {"route": "/instructors", "title": "指导员",
+             "desc": "可教产品、可去中心、不可用时段、单日上限",
+             "stat": "%d 位" % len(instructors),
+             "todo": ("%d 位缺配置" % sum(1 for x in instructors if not x.is_configured)
+                      if any(not x.is_configured for x in instructors) else "")},
+            {"route": "/capacity", "title": "场地容量",
+             "desc": "校区同时最多开几个班（在教室数之外再加一层）",
+             "stat": "%d 个校区设了上限" % len(caps),
+             "todo": ""},
+            {"route": "/regions", "title": "区域相邻",
+             "desc": "哪些区之间算「相邻」，决定跨中心的远近档位",
+             "stat": "%d / %d 个区配了" % (
+                 len([r for r in regions if adjacency.get(r)]), len(regions)),
+             "todo": ("%d 个区没配，一律按跨区域算"
+                      % len([r for r in regions if not adjacency.get(r)])
+                      if any(not adjacency.get(r) for r in regions) else "")},
+            {"route": "/calendar", "title": "学年日历",
+             "desc": "各批次的起止日期与上课日 —— 首页按天看排班靠它",
+             "stat": "%d 个批次" % len(cal),
+             "todo": "还没填" if cal.is_empty else ""},
+        ]
+        return render(request, "settings.html", items=items)
+
+    @app.get("/demo-data", response_class=HTMLResponse)
+    def demo_data(request: Request):
+        """示例数据长什么样 —— 点「生成」之前先看看。"""
+        data = DemoDataset()
+        centers = data.centers()
+        instructors = data.instructors(centers)
+        df = data.teams_frame(centers)
+        return render(request, "demo_data.html",
+                      centers=centers, instructors=instructors,
+                      n_literature=sum(1 for c in centers
+                                       if c.name.endswith("文学")),
+                      teams=df.to_dict("records"),
+                      by_product=df["产品"].value_counts().to_dict(),
+                      by_grade=df["程度"].value_counts().to_dict())
 
     # ------------------------------------------------------------ 中心
 

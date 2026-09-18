@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}任务 · 排班系统{% endblock %}
+{% block content %}
+<script>
+  function busy(form, text) {
+    var b = form.querySelector('button[type=submit]');
+    if (!b) return;
+    b.disabled = true;
+    b.innerHTML = '<span class="spinner" style="border-color:rgba(255,255,255,.35);' +
+                  'border-top-color:#fff"></span> ' + text;
+    setTimeout(function(){ form.submit(); }, 0);
+  }
+</script>
+
+{{ ui.page_title('排班任务', '每跑一次排班就是一个任务') }}
+
+<section class="card">
+  <h2>跑一次</h2>
+  <div class="actions" style="margin-top:0;margin-bottom:8px">
+    <form method="post" action="/tasks/demo" onsubmit="busy(this,'正在生成并求解…')">
+      <button type="submit">用示例数据跑</button>
+    </form>
+    <a class="btn ghost" href="/demo-data">示例数据有哪些</a>
+  </div>
+
+  <form method="post" action="/tasks" enctype="multipart/form-data" class="form-row">
+    {{ ui.field('任务名称', 'name', required=true) }}
+    {{ ui.select_field('场景', 'season', ['寒暑假', '春秋季']) }}
+    <label class="field">
+      <span class="field-label">团队清单 <em>*</em></span>
+      <input type="file" name="upload" accept=".xlsx" required>
+      <span class="field-hint">用自己的 xlsx</span>
+    </label>
+    <button type="submit" onclick="busy(this.form,'正在上传并求解…')">上传并求解</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>历史（{{ tasks|length }}）</h2>
+  {% if tasks %}
+  <table>
+    <thead><tr>
+      <th>名称</th><th>场景</th><th>状态</th><th>求解</th>
+      <th class="num">没排上</th><th class="num">用时</th>
+    </tr></thead>
+    <tbody>
+      {% for t in tasks %}
+      <tr>
+        <td>
+          <a href="/tasks/{{ t.id }}"><strong>{{ t.name }}</strong></a>
+          <span class="cell-sub">{{ t.created_at.strftime('%m-%d %H:%M') }}</span>
+        </td>
+        <td>{{ t.season }}</td>
+        <td>{{ ui.badge(t.status.label,
+              'ok' if t.status.value == 'done' else
+              'bad' if t.status.value == 'failed' else 'run') }}</td>
+        <td>
+          {% if t.solver_status %}
+            {{ ui.badge('已证明最优' if t.solver_status == 'OPTIMAL' else t.solver_status,
+                 'ok' if t.solver_status == 'OPTIMAL' else 'warn') }}
+          {% elif t.error %}<small>{{ t.error[:36] }}</small>
+          {% else %}<small>—</small>{% endif %}
+        </td>
+        <td class="num">{% if t.status.value == 'done' %}{{ t.unplaced }}{% else %}<small>—</small>{% endif %}</td>
+        <td class="num"><small>{{ '%.0f' % t.elapsed_seconds }}s</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    {{ ui.empty_state('还没有任务', '上面跑一次') }}
+  {% endif %}
+</section>
+{% endblock %}

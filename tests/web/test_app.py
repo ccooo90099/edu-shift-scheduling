@@ -45,10 +45,31 @@ def client(app):
     return c
 
 
-def test_首页能打开(client):
+def test_首页只看排班_不放配置(client):
+    """首页是看结果的地方。改中心、老师、教室这些要去配置中心 ——
+    两件事混在一页上谁都找不着。"""
     r = client.get("/")
     assert r.status_code == 200
-    assert "排班任务" in r.text
+    assert "排班" in r.text
+    # 配置表单不该出现在首页
+    assert 'action="/centers"' not in r.text
+    assert 'action="/instructors"' not in r.text
+    assert "配置" in r.text, "但要有去配置中心的入口"
+
+
+def test_配置中心列出所有配置项及其现状(client):
+    body = client.get("/settings").text
+    for title in ("中心与教室", "指导员", "场地容量", "区域相邻", "学年日历"):
+        assert title in body
+    assert "悄悄退化" in body, "要说明缺数据的后果"
+
+
+def test_示例数据页能看到里面有什么(client):
+    """「也可以看到 demo 的数据有哪些」—— 生成之前先看。"""
+    body = client.get("/demo-data").text
+    assert "示范" in body and "示教" in body
+    assert "文学楼只上文学美育" in body
+    assert "名字全是编的" in body
 
 
 def test_没有数据时顶部就挂着告警条(client):
@@ -424,8 +445,8 @@ def test_导航和告警条里的链接都不是死链(client):
     线上点进去 404。这条守住：凡是页面里出现的站内链接都必须打得开。"""
     import re
     seen = set()
-    for page in ("/", "/centers", "/capacity", "/regions", "/instructors",
-                 "/calendar"):
+    for page in ("/", "/tasks", "/settings", "/demo-data", "/centers",
+                 "/capacity", "/regions", "/instructors", "/calendar"):
         body = client.get(page).text
         seen |= set(re.findall(r'href="(/[^"#?]*)', body))
     broken = [u for u in sorted(seen)
@@ -675,10 +696,10 @@ def test_跑完就不再转圈(client, seeded):
 
 def test_点了按钮立刻有反馈(client):
     """生成清单和启动求解要一两秒，没反馈的话人会以为没点上、再点一次。"""
-    body = client.get("/").text
-    assert "function busy" in body
-    assert "正在生成并求解" in body
-    assert "正在上传并求解" in body
+    home = client.get("/").text
+    assert "function busy" in home and "正在生成并求解" in home
+    tasks = client.get("/tasks").text
+    assert "正在上传并求解" in tasks
 
 
 def test_产物解析结果会缓存_不必每次刷新都重读(client, seeded):
@@ -703,3 +724,54 @@ def test_产物解析结果会缓存_不必每次刷新都重读(client, seeded)
         client.get("/tasks/%s" % tid)
     cached = (time.monotonic() - t0) / 3
     assert cached < first, "走缓存要比重新解析快"
+
+
+# ── 首页按日期看排班 ────────────────────────────────────────
+
+def test_首页把期位展开成真实日期(client, seeded):
+    """排班的结果是「期位 + 时段」，不是日期。要靠学年日历把期位
+    展开成真实上课日，才能回答「今天有哪些课」。"""
+    import re
+    tid = client.post("/tasks/demo", follow_redirects=False) \
+        .headers["location"].rsplit("/", 1)[-1]
+    assert _等任务(seeded.tasks, tid, seconds=180).status.value == "done"
+
+    # 种子日历里的上课日在 2026-07
+    counts = {}
+    for scope in ("day", "week", "month"):
+        body = client.get("/?scope=%s&on=2026-07-08" % scope).text
+        counts[scope] = len(re.findall(r'class="cellitem"', body))
+    assert counts["day"] > 0, "那天应该有课"
+    assert counts["week"] > counts["day"], "一周比一天多"
+    assert counts["month"] > counts["week"], "一月比一周多"
+
+
+def test_没填日历时说明为什么展不开而不是给张空表(client, seeded):
+    """空表最没用 —— 得说清缺什么、去哪儿补。"""
+    from scheduling.domain.model.academic_calendar import AcademicCalendar
+    tid = client.post("/tasks/demo", follow_redirects=False) \
+        .headers["location"].rsplit("/", 1)[-1]
+    assert _等任务(seeded.tasks, tid, seconds=180).status.value == "done"
+
+    seeded.calendars.save(AcademicCalendar([]))      # 把日历清空
+    body = client.get("/").text
+    assert "还没填学年日历" in body
+    assert "展开成真实上课日" in body
+
+
+def test_产物同时写出人看的xlsx和程序读的json(seeded, client):
+    """解析中文标签（「第一期」还是「周六」）来还原期位太脆 ——
+    期位是个枚举，落盘时就该保持枚举形态。"""
+    from pathlib import Path
+    from scheduling.infrastructure.spreadsheet import result_json
+    tid = client.post("/tasks/demo", follow_redirects=False) \
+        .headers["location"].rsplit("/", 1)[-1]
+    task = _等任务(seeded.tasks, tid, seconds=180)
+
+    side = Path(task.output_path).with_suffix(".json")
+    assert side.exists()
+    data = result_json.load(side)
+    placed = [t for t in data["teams"] if t["placed"]]
+    assert placed
+    assert all(t["period"] in ("A", "B") for t in placed), "期位存枚举不存标签"
+    assert all(t["slot"] and t["instructor"] for t in placed)
