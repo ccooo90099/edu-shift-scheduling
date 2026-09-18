@@ -5,6 +5,9 @@
 #   例：  deploy/huggingface/push.sh zhangsan/edu-shift-scheduling
 #
 # 前提：先在 https://huggingface.co/new-space 建好 Space，SDK 选 Docker。
+#
+# 认证：设了 HF_TOKEN 环境变量就用它（CI 用这条路），
+#       没设就让 git 交互式问你（本地用这条路）。
 set -euo pipefail
 
 SPACE="${1:-}"
@@ -42,8 +45,18 @@ cd "$WORK"
 git init -q
 git add -A
 git -c user.email=deploy@local -c user.name=deploy commit -qm "deploy"
-# HF 用你的 HF 账号 token 认证；首次会提示输入
-git push -f "https://huggingface.co/spaces/$SPACE" HEAD:main
+
+if [[ -n "${HF_TOKEN:-}" ]]; then
+  # token 拼在 URL 里会进 git 的错误输出和 reflog，所以走 header，
+  # 并且把可能回显 token 的输出掐掉
+  AUTH="$(printf 'user:%s' "$HF_TOKEN" | base64 -w0 2>/dev/null || printf 'user:%s' "$HF_TOKEN" | base64)"
+  git -c "http.extraheader=Authorization: Basic $AUTH" \
+      push -f "https://huggingface.co/spaces/$SPACE" HEAD:main 2>&1 \
+    | sed "s/$HF_TOKEN/***/g"
+else
+  # 没有 token：让 git 交互式问用户名和 Access Token
+  git push -f "https://huggingface.co/spaces/$SPACE" HEAD:main
+fi
 
 cat <<'DONE'
 

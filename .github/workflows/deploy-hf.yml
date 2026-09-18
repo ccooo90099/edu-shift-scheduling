@@ -1,0 +1,51 @@
+name: 部署到 Hugging Face Space
+
+# 手动触发。不挂在 push 上 —— 每次改文档都重建 Space 太吵，
+# 而且免费档冷启动要几十秒。
+on:
+  workflow_dispatch:
+    inputs:
+      space:
+        description: "Space 全名，格式 <HF用户名>/<space名>"
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    name: 推送
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 检查 token 是否配了
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::仓库里没有 HF_TOKEN。"
+            echo "去 Settings → Secrets and variables → Actions → New repository secret，"
+            echo "名字填 HF_TOKEN，值是 https://huggingface.co/settings/tokens 建的 Write token。"
+            exit 1
+          fi
+
+      - name: 推送到 Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: deploy/huggingface/push.sh "${{ inputs.space }}"
+
+      - name: 提示后续步骤
+        run: |
+          echo "### 推完了 :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "https://huggingface.co/spaces/${{ inputs.space }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "还要在 Space 页面 **Settings → Variables and secrets** 里加三个：" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 名字 | 值 |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| \`SCHEDULING_PASSWORD\` | 你要的口令 |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`SCHEDULING_SECRET\` | 任意随机串 |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`SCHEDULING_SEED_DEMO\` | \`1\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "然后 **Settings → Factory rebuild**。" >> $GITHUB_STEP_SUMMARY
