@@ -25,3 +25,9 @@ pinned: false
 - **不要往这里放真实数据。** 访问只隔着一个共享口令，不是认证。
 
 源码与文档：https://github.com/ccooo90099/edu-shift-scheduling
+
+---
+
+> **注：Hugging Face 的 Docker Space 现在需要付费**（2026-09 用户实测）。
+> 这个目录留着，万一以后又免费了可以直接用。
+> 当前推荐的免费方案见 [`../../docs/公网部署.md`](../../docs/公网部署.md)。

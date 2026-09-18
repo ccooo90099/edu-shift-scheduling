@@ -1,0 +1,27 @@
+# Render Blueprint。在 Render 上 New → Blueprint → 选这个仓库即可，
+# 不需要 token，也不用在本地跑任何脚本。
+#
+# ⚠️ 免费档的两个限制，demo 能接受但要知道：
+#   1. 文件系统是临时的（持久磁盘要付费）。重部署 / 休眠唤醒后
+#      上传的文件和改过的配置都会没 —— 所以开了种子数据，
+#      醒来会自动重灌一份示例。
+#   2. 15 分钟没人访问就休眠，下次访问要等冷启动。
+#      这个应用要装 OR-Tools（79MB），冷启动尤其慢，估计半分钟往上。
+services:
+  - type: web
+    name: edu-shift-scheduling
+    runtime: docker
+    plan: free
+    region: singapore          # 离深圳最近的一个
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz  # 不能用 /api/readiness，那个要口令
+    autoDeploy: false          # 手动点部署，免得每次改文档都重建
+    envVars:
+      - key: SCHEDULING_SEED_DEMO
+        value: "1"
+      - key: SCHEDULING_DATA
+        value: /app/data
+      - key: SCHEDULING_PASSWORD
+        sync: false            # 在 Render 界面上填，不进仓库
+      - key: SCHEDULING_SECRET
+        generateValue: true    # Render 自动生成一串随机值

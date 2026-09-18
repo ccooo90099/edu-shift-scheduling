@@ -88,13 +88,18 @@ docker compose up -d --build
 
 完整说明见 [`docs/部署.md`](docs/部署.md)，含首次部署要补的三样数据。
 
-### 公网 demo（Hugging Face Spaces，免费不要卡）
+### 公网 demo
+
+最快的一条（不用注册任何账号）：
 
 ```bash
-deploy/huggingface/push.sh <你的HF用户名>/<space名>
+docker compose up -d --build
+cloudflared tunnel --url http://localhost:8000    # 打印一个公网网址
 ```
 
-步骤与注意事项见 [`docs/公网部署.md`](docs/公网部署.md)。
+想要固定网址的话用 Render 免费档（`render.yaml` 已备好）。
+两条路的步骤、限制与对比见 [`docs/公网部署.md`](docs/公网部署.md)。
+
 **演示实例只放虚构数据** —— 访问只隔着一个共享口令，不是认证。
 
 > ⚠️ Dockerfile 与 compose 文件**从未真正构建运行过**（开发环境无 Docker
