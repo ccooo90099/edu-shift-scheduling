@@ -88,6 +88,15 @@ docker compose up -d --build
 
 完整说明见 [`docs/部署.md`](docs/部署.md)，含首次部署要补的三样数据。
 
+### 公网 demo（Hugging Face Spaces，免费不要卡）
+
+```bash
+deploy/huggingface/push.sh <你的HF用户名>/<space名>
+```
+
+步骤与注意事项见 [`docs/公网部署.md`](docs/公网部署.md)。
+**演示实例只放虚构数据** —— 访问只隔着一个共享口令，不是认证。
+
 > ⚠️ Dockerfile 与 compose 文件**从未真正构建运行过**（开发环境无 Docker
 > daemon），只验证了镜像内那两条命令在容器外成立。首次部署请按文档逐项确认。
 

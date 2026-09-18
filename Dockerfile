@@ -30,12 +30,16 @@ ENV PYTHONPATH=/app/src:/app \
 RUN useradd -r -u 1000 -m app && mkdir -p /app/data && chown -R app /app/data
 USER app
 
+# 各家 PaaS 给的端口不一样：HF Spaces 要 7860，Render/Railway 给 $PORT。
+# 默认 8000 给内网用。
+ENV PORT=8000
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/healthz', timeout=4)"
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import os,urllib.request as u; u.urlopen('http://127.0.0.1:%s/healthz' % os.environ.get('PORT','8000'), timeout=4)"
 
 # 内网并发个位数，单 worker 足够。求解本身在应用内的线程池里跑，
 # 多开 worker 反而会让任务状态分散在各进程的内存里。
-CMD ["uvicorn", "scheduling.interfaces.web.app:create_app", "--factory", \
-     "--host", "0.0.0.0", "--port", "8000"]
+# 用 shell 形式才能展开 $PORT
+CMD uvicorn scheduling.interfaces.web.app:create_app --factory \
+    --host 0.0.0.0 --port ${PORT:-8000}

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -24,6 +25,7 @@ from ...domain.model.curriculum import product_of
 from ...domain.model.instructor import Instructor
 from ...domain.model.timeslot import TimeSlot
 from ...domain.model.venue import Center, Coordinate, MAP_SOURCE_DATUM, Room
+from ...application.use_cases.seed_demo import SeedDemo
 from ...domain.policy.travel import normalize_adjacency
 from .container import Container
 from .gate import COOKIE_NAME, PasswordGate, is_public, safe_next, startup_banner
@@ -88,6 +90,14 @@ def create_app(container: Container | None = None,
     app.mount("/static", StaticFiles(directory=str(static)), name="static")
 
     print(startup_banner(app.state.gate), flush=True)
+
+    # 免费 PaaS 大多重启就清空文件系统，SQLite 一起没。每次醒来一个空系统，
+    # demo 没法看。灌一份**全是编的**示例数据 —— 真实门店与姓名不进仓库。
+    if os.environ.get("SCHEDULING_SEED_DEMO", "").strip() in ("1", "true", "yes"):
+        c = app.state.container
+        if SeedDemo(c.centers, c.instructors, c.calendars)():
+            print("[种子] 库是空的，已灌入示例数据（全部虚构，非真实门店与姓名）",
+                  flush=True)
 
     def get_container(request: Request) -> Container:
         return request.app.state.container

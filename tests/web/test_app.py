@@ -353,3 +353,52 @@ def test_随机口令不含易混字符():
     from scheduling.interfaces.web.gate import generate_password
     for _ in range(50):
         assert not (set(generate_password()) & set("0O1lI"))
+
+
+# ── 种子数据（免费 PaaS 重启清空文件系统）───────────────────
+
+def test_库空时灌入示例数据_已有数据时不动(tmp_path):
+    from scheduling.application.use_cases.seed_demo import SeedDemo
+    from scheduling.infrastructure.persistence.sqlite import connect
+
+    conn = connect(tmp_path / "s.db")
+    centers = SqliteCenterRepository(conn)
+    instructors = SqliteInstructorRepository(conn)
+    calendars = SqliteCalendarRepository(conn)
+    seed = SeedDemo(centers, instructors, calendars)
+
+    assert seed() is True
+    n = len(centers.all())
+    assert n == 5 and len(instructors.all()) == 7
+    assert len(calendars.load()) == 2
+
+    assert seed() is False, "已有数据就不该再灌"
+    assert len(centers.all()) == n
+
+
+def test_示例数据不含真实门店或姓名():
+    """真实门店信息与 106 位指导员姓名一路都没进过仓库，这里不破例。"""
+    from scheduling.application.use_cases import seed_demo
+    names = [c[0] for c in seed_demo.DEMO_CENTERS]
+    assert all(n.startswith("示例") for n in names)
+    teachers = [t[0] for t in seed_demo.DEMO_INSTRUCTORS]
+    assert all(t.startswith("老师") and len(t) <= 3 for t in teachers)
+    for _, _, _, lon, lat, _ in seed_demo.DEMO_CENTERS:
+        assert 113.7 < lon < 114.7 and 22.4 < lat < 22.9, "坐标在深圳范围内即可"
+
+
+def test_示例数据能直接拿去求解(tmp_path):
+    """灌完就该是个能跑的系统，而不是一堆填了一半的配置。"""
+    from scheduling.application.use_cases.seed_demo import SeedDemo
+    from scheduling.infrastructure.persistence.sqlite import connect
+
+    conn = connect(tmp_path / "s.db")
+    centers = SqliteCenterRepository(conn)
+    instructors = SqliteInstructorRepository(conn)
+    SeedDemo(centers, instructors, SqliteCalendarRepository(conn))()
+
+    assert all(c.has_coordinate for c in centers.all()), "都有坐标，转场才不是粗判"
+    assert all(c.room_count > 0 for c in centers.all())
+    assert all(i.is_configured for i in instructors.all()), "都配了资质"
+    assert not centers.without_coordinate()
+    assert not instructors.unconfigured()
