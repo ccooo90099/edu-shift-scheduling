@@ -3,7 +3,19 @@
 {{ ui.page_title('排班任务', '上传团队清单 → 自动求解 → 看板与 Excel') }}
 
 <section class="card">
-  <h2>新建任务</h2>
+  <h2>先看个结果</h2>
+  <p class="note" style="margin-bottom:12px">
+    没有现成的表也能看。点一下会现造一份<strong>模拟清单</strong>直接开算 ——
+    结构照着真实那份排班表来（文学楼只上文学美育、S7 不开物理化学、
+    指导员以单产品为主），<strong>名字全是编的</strong>。
+  </p>
+  <form method="post" action="/tasks/demo">
+    <button type="submit">一键跑示例排班</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>用自己的表</h2>
   <form method="post" action="/tasks" enctype="multipart/form-data" class="form-row">
     {{ ui.field('任务名称', 'name', required=true, hint='方便自己认，随便起') }}
     {{ ui.select_field('场景', 'season', ['寒暑假', '春秋季'],

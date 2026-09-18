@@ -27,6 +27,7 @@ from ...domain.model.instructor import Instructor
 from ...domain.model.timeslot import TimeSlot
 from ...domain.model.venue import Center, Coordinate, MAP_SOURCE_DATUM, Room
 from ...application.use_cases.build_problem import BuildProblem
+from ...application.use_cases.demo_dataset import DemoDataset
 from ...application.use_cases.seed_demo import SeedDemo
 from ...domain.model.academic_calendar import AcademicCalendar, Batch
 from ...domain.model.period import Period, Season
@@ -485,6 +486,27 @@ def create_app(container: Container | None = None,
         c.tasks.create(task)
         if task.input_path:
             _pool.submit(_solve_in_background, task.id)
+        return RedirectResponse("/tasks/%s" % task.id, status_code=303)
+
+    @app.post("/tasks/demo")
+    def create_demo_task(c: Container = Depends(get_container)):
+        """一键跑示例：现造一份模拟清单，直接开算。
+
+        结构照着真实那份表来（文学楼只上文学美育、S7 没有物理化学、
+        指导员以单产品为主），规模砍过 —— demo 要的是点开就看到结果。
+        """
+        data = DemoDataset()
+        task = SolveTask(id=uuid.uuid4().hex[:12],
+                         name="示例排班 " + datetime.now().strftime("%m-%d %H:%M"),
+                         season=Season.寒暑假.value)
+        dest = c.data_dir / "uploads" / ("%s-示例清单.xlsx" % task.id)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        n_centers, n_inst, n_teams = data.write(dest)
+        task.input_path = str(dest)
+        task.notes = ["模拟数据：%d 个中心、%d 位指导员、%d 个团队。"
+                      "结构照真实表，名字全是编的。" % (n_centers, n_inst, n_teams)]
+        c.tasks.create(task)
+        _pool.submit(_solve_in_background, task.id)
         return RedirectResponse("/tasks/%s" % task.id, status_code=303)
 
     @app.post("/tasks/{task_id}/rerun")

@@ -369,7 +369,7 @@ def test_库空时灌入示例数据_已有数据时不动(tmp_path):
 
     assert seed() is True
     n = len(centers.all())
-    assert n == 5 and len(instructors.all()) == 7
+    assert n >= 8 and len(instructors.all()) >= 20
     assert len(calendars.load()) == 2
 
     assert seed() is False, "已有数据就不该再灌"
@@ -378,13 +378,26 @@ def test_库空时灌入示例数据_已有数据时不动(tmp_path):
 
 def test_示例数据不含真实门店或姓名():
     """真实门店信息与 106 位指导员姓名一路都没进过仓库，这里不破例。"""
-    from scheduling.application.use_cases import seed_demo
-    names = [c[0] for c in seed_demo.DEMO_CENTERS]
-    assert all(n.startswith("示例") for n in names)
-    teachers = [t[0] for t in seed_demo.DEMO_INSTRUCTORS]
-    assert all(t.startswith("老师") and len(t) <= 3 for t in teachers)
-    for _, _, _, lon, lat, _ in seed_demo.DEMO_CENTERS:
-        assert 113.7 < lon < 114.7 and 22.4 < lat < 22.9, "坐标在深圳范围内即可"
+    from scheduling.application.use_cases.demo_dataset import DemoDataset
+    d = DemoDataset()
+    centers = d.centers()
+    assert all(c.name.startswith("示范") for c in centers)
+    assert all(i.name.startswith("示教") for i in d.instructors(centers))
+    for c in centers:
+        assert 113.7 < c.coordinate.longitude < 114.7
+        assert 22.4 < c.coordinate.latitude < 22.9, "坐标在深圳范围内即可"
+
+
+def test_示例数据照搬了真实表的两条硬结构():
+    """不是随便编的：文学楼只上文学美育（真实表 26/26 行），
+    S7 不开物理化学。结构不像，跑出来的结果就没有参考价值。"""
+    from scheduling.application.use_cases.demo_dataset import DemoDataset
+    d = DemoDataset()
+    df = d.teams_frame(d.centers())
+    文学楼 = df[df["中心"].str.endswith("文学")]
+    assert set(文学楼["产品"]) == {"文学美育"}
+    assert not ({"躬行实践", "溯源"} & set(df[df["程度"] == "S7"]["产品"]))
+    assert {"躬行实践"} <= set(df[df["程度"] == "S8"]["产品"])
 
 
 def test_示例数据能直接拿去求解(tmp_path):
@@ -512,8 +525,8 @@ def seeded(app):
 def test_上传后会真的开始求解而不是永远排队(client, seeded, tmp_path):
     """这条链之前是断的：create_task 只存了一条记录就返回，
     没人调用求解器，任务永远停在「排队中」。"""
-    from scheduling.application.use_cases.seed_demo import DEMO_CENTERS
-    src = _清单(tmp_path, [c[0] for c in DEMO_CENTERS[:3]])
+    from scheduling.application.use_cases.demo_dataset import DemoDataset
+    src = _清单(tmp_path, [c.name for c in DemoDataset().centers()[:3]])
     r = client.post("/tasks", data={"name": "e2e", "season": "寒暑假"},
                     files={"upload": ("清单.xlsx", src.read_bytes(),
                                       "application/vnd.ms-excel")},
@@ -536,16 +549,16 @@ def test_没传文件的任务直接标失败而不是卡在排队中(client, se
     assert "没有上传团队清单" in task.error
 
 
-def test_看板页能看到排课结果_不用下载(client, seeded, tmp_path):
+def test_一键跑示例_不用准备任何文件就能看到结果(client, seeded):
+    """打开就能看结果 —— 没有现成的表也不该卡住。"""
     import re
-    from scheduling.application.use_cases.seed_demo import DEMO_CENTERS
-    src = _清单(tmp_path, [c[0] for c in DEMO_CENTERS[:2]])
-    r = client.post("/tasks", data={"name": "board", "season": "寒暑假"},
-                    files={"upload": ("x.xlsx", src.read_bytes(),
-                                      "application/vnd.ms-excel")},
-                    follow_redirects=False)
+    r = client.post("/tasks/demo", follow_redirects=False)
+    assert r.status_code == 303
     tid = r.headers["location"].rsplit("/", 1)[-1]
-    assert _等任务(seeded.tasks, tid).status.value == "done"
+
+    task = _等任务(seeded.tasks, tid, seconds=180)
+    assert task.status.value == "done", task.error
+    assert task.output_path
 
     body = client.get("/tasks/%s/board" % tid).text
     cells = re.findall(r'<span class="cellitem">([^<]+)</span>', body)
@@ -555,14 +568,9 @@ def test_看板页能看到排课结果_不用下载(client, seeded, tmp_path):
 
 def test_下载的是五个sheet的完整工作簿(client, seeded, tmp_path):
     from openpyxl import load_workbook
-    from scheduling.application.use_cases.seed_demo import DEMO_CENTERS
-    src = _清单(tmp_path, [DEMO_CENTERS[0][0]])
-    r = client.post("/tasks", data={"name": "dl", "season": "寒暑假"},
-                    files={"upload": ("x.xlsx", src.read_bytes(),
-                                      "application/vnd.ms-excel")},
-                    follow_redirects=False)
+    r = client.post("/tasks/demo", follow_redirects=False)
     tid = r.headers["location"].rsplit("/", 1)[-1]
-    assert _等任务(seeded.tasks, tid).status.value == "done"
+    assert _等任务(seeded.tasks, tid, seconds=180).status.value == "done"
 
     resp = client.get("/tasks/%s/download" % tid)
     assert resp.status_code == 200
