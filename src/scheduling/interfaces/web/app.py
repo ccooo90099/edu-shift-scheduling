@@ -553,13 +553,30 @@ def create_app(container: Container | None = None,
     @app.get("/tasks/{task_id}/progress", response_class=HTMLResponse)
     def task_progress(request: Request, task_id: str,
                       c: Container = Depends(get_container)):
-        """HTMX 轮询这个片段。任务终结后返回的片段不再带轮询属性，
-        前端自然停下来，不需要额外的停止逻辑。"""
+        """HTMX 轮询这个片段。
+
+        两件事：
+
+        1. 任务没结束时返回带 `hx-*` 的片段，前端继续轮询；结束了就
+           不带，轮询自然停下来，不需要额外的停止逻辑。
+
+        2. **刚刚结束的那一次，让整页重新加载。**
+           轮询用的是 `hx-swap="outerHTML"`，只换 `#progress` 这一个 div ——
+           而看板卡片是首次加载时服务端渲染的，那时候还没有结果。
+           不刷整页的话，进度条变成「已完成」了，底下却始终没有课表，
+           得手动刷新才看得到。
+
+           只在**这一次**发 HX-Refresh：片段在终结后不再带 hx-*，
+           所以不会反复刷。
+        """
         task = c.tasks.get(task_id)
         if task is None:
             raise HTTPException(404, "没有这个任务")
-        return templates.TemplateResponse(
+        resp = templates.TemplateResponse(
             request, "_progress.html", {"task": task})
+        if task.status.is_terminal and request.headers.get("HX-Request"):
+            resp.headers["HX-Refresh"] = "true"
+        return resp
 
     def _solve_in_background(task_id: str) -> None:
         """后台跑一次完整的排班：读表 → 求解 → 体检 → 写 xlsx。

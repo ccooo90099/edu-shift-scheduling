@@ -775,3 +775,34 @@ def test_产物同时写出人看的xlsx和程序读的json(seeded, client):
     assert placed
     assert all(t["period"] in ("A", "B") for t in placed), "期位存枚举不存标签"
     assert all(t["slot"] and t["instructor"] for t in placed)
+
+
+def test_跑完后整页重载_否则看板不会自己出来(client, app):
+    """htmx 的 hx-swap 只换 #progress 那一个 div，而看板卡片是首次加载时
+    服务端渲染的 —— 那时还没有结果。不刷整页的话，进度条变成「已完成」了
+    底下却始终没有课表，得手动刷新。"""
+    from scheduling.application.dto import SolveTask, TaskStatus
+    tasks = app.state.container.tasks
+    t = SolveTask(id="hx1", name="x", season="寒暑假", status=TaskStatus.RUNNING)
+    tasks.create(t)
+
+    # 还在跑：继续轮询，不要刷页
+    r = client.get("/tasks/hx1/progress", headers={"HX-Request": "true"})
+    assert "hx-trigger" in r.text
+    assert "HX-Refresh" not in r.headers
+
+    # 跑完了：让整页重载一次
+    t.status = TaskStatus.DONE
+    tasks.update(t)
+    r = client.get("/tasks/hx1/progress", headers={"HX-Request": "true"})
+    assert r.headers.get("HX-Refresh") == "true"
+    assert "hx-trigger" not in r.text, "重载后不该再轮询，否则会反复刷"
+
+
+def test_不是htmx发起的请求不加刷新头(client, app):
+    """meta refresh 兜底那条路本来就是整页刷，再加 HX-Refresh 没意义。"""
+    from scheduling.application.dto import SolveTask, TaskStatus
+    app.state.container.tasks.create(SolveTask(
+        id="hx2", name="x", season="寒暑假", status=TaskStatus.DONE))
+    r = client.get("/tasks/hx2/progress")
+    assert "HX-Refresh" not in r.headers
