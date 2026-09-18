@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from datetime import date
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -26,6 +27,8 @@ from ...domain.model.instructor import Instructor
 from ...domain.model.timeslot import TimeSlot
 from ...domain.model.venue import Center, Coordinate, MAP_SOURCE_DATUM, Room
 from ...application.use_cases.seed_demo import SeedDemo
+from ...domain.model.academic_calendar import AcademicCalendar, Batch
+from ...domain.model.period import Period, Season
 from ...domain.policy.travel import normalize_adjacency
 from .container import Container
 from .gate import COOKIE_NAME, PasswordGate, is_public, safe_next, startup_banner
@@ -222,6 +225,55 @@ def create_app(container: Container | None = None,
         center.located_by = "手动补录（%s）" % map_source
         c.centers.save(center)
         return RedirectResponse("/centers", status_code=303)
+
+    # ------------------------------------------------------------ 学年日历
+
+    @app.get("/calendar", response_class=HTMLResponse)
+    def calendar_page(request: Request, c: Container = Depends(get_container)):
+        cal = c.calendars.load()
+        batches = list(cal)
+        return render(request, "calendar.html", batches=batches,
+                      seasons=[s.value for s in Season],
+                      periods=[(p.value, p) for p in (Period.A, Period.B)],
+                      overlaps=cal.overlapping_pairs())
+
+    @app.post("/calendar")
+    def save_batch(name: str = Form(...), season: str = Form(...),
+                   start: str = Form(...), end: str = Form(...),
+                   dates_a: str = Form(""), dates_b: str = Form(""),
+                   c: Container = Depends(get_container)):
+        def parse_days(text):
+            out = []
+            for chunk in (text or "").replace("，", ",").replace("\n", ",").split(","):
+                chunk = chunk.strip()
+                if not chunk:
+                    continue
+                try:
+                    out.append(date.fromisoformat(chunk))
+                except ValueError:
+                    raise HTTPException(
+                        400, "日期要写成 2026-07-06 这种格式，收到 %r" % chunk) from None
+            return out
+
+        try:
+            batch = Batch(name=name, season=Season(season),
+                          start=date.fromisoformat(start),
+                          end=date.fromisoformat(end),
+                          period_dates={Period.A: parse_days(dates_a),
+                                        Period.B: parse_days(dates_b)})
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+        cal = c.calendars.load()
+        kept = [b for b in cal if b.name != name]      # 同名视为覆盖
+        c.calendars.save(AcademicCalendar(kept + [batch]))
+        return RedirectResponse("/calendar", status_code=303)
+
+    @app.post("/calendar/{name}/delete")
+    def delete_batch(name: str, c: Container = Depends(get_container)):
+        cal = c.calendars.load()
+        c.calendars.save(AcademicCalendar([b for b in cal if b.name != name]))
+        return RedirectResponse("/calendar", status_code=303)
 
     # ------------------------------------------------------------ 场地容量
 

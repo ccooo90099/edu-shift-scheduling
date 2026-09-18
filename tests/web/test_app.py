@@ -402,3 +402,74 @@ def test_示例数据能直接拿去求解(tmp_path):
     assert all(i.is_configured for i in instructors.all()), "都配了资质"
     assert not centers.without_coordinate()
     assert not instructors.unconfigured()
+
+
+# ── 学年日历（线上报的 /calendar 404）────────────────────────
+
+def test_导航和告警条里的链接都不是死链(client):
+    """/calendar 曾经在导航和告警条里都指着，但路由根本没实现，
+    线上点进去 404。这条守住：凡是页面里出现的站内链接都必须打得开。"""
+    import re
+    seen = set()
+    for page in ("/", "/centers", "/capacity", "/regions", "/instructors",
+                 "/calendar"):
+        body = client.get(page).text
+        seen |= set(re.findall(r'href="(/[^"#?]*)', body))
+    broken = [u for u in sorted(seen)
+              if not u.startswith("/static") and client.get(u).status_code != 200]
+    assert not broken, "死链：%s" % broken
+
+
+def test_日历页能增删批次(client, app):
+    assert client.get("/calendar").status_code == 200
+    client.post("/calendar", data={
+        "name": "测试批次", "season": "春秋季",
+        "start": "2026-09-05", "end": "2026-12-20",
+        "dates_a": "2026-09-05,2026-09-12", "dates_b": "2026-09-06"})
+    cal = app.state.container.calendars.load()
+    assert [b.name for b in cal] == ["测试批次"]
+    from scheduling.domain.model.period import Period
+    assert len(list(cal)[0].dates_of(Period.A)) == 2
+
+    client.post("/calendar/测试批次/delete")
+    assert len(app.state.container.calendars.load()) == 0
+
+
+def test_同名批次视为覆盖而不是重复添加(client, app):
+    for end in ("2026-12-20", "2026-12-31"):
+        client.post("/calendar", data={"name": "同名", "season": "春秋季",
+                                       "start": "2026-09-05", "end": end})
+    cal = list(app.state.container.calendars.load())
+    assert len(cal) == 1 and cal[0].end.isoformat() == "2026-12-31"
+
+
+def test_日期写错要报400而不是静默吞掉(client):
+    r = client.post("/calendar", data={"name": "x", "season": "春秋季",
+                                       "start": "2026-09-05", "end": "2026-12-20",
+                                       "dates_a": "九月五号"})
+    assert r.status_code == 400 and "2026-07-06" in r.json()["detail"]
+
+
+# ── htmx 缺失时的兜底 ───────────────────────────────────────
+
+def test_没有htmx时进度靠整页刷新兜底(client, app):
+    """线上 htmx 没加载上，进度就永远停在「求解中」。
+    现在这件事不再取决于那个静态文件在不在。"""
+    from scheduling.application.dto import SolveTask, TaskStatus
+    app.state.container.tasks.create(
+        SolveTask(id="tf", name="x", season="寒暑假", status=TaskStatus.RUNNING))
+
+    page = client.get("/tasks/tf").text
+    assert "!window.htmx" in page, "htmx 不在时才插 meta refresh，在的话不插"
+    assert "httpEquiv" in page
+
+    t = app.state.container.tasks.get("tf")
+    t.status = TaskStatus.DONE
+    app.state.container.tasks.update(t)
+    assert "httpEquiv" not in client.get("/tasks/tf").text, "跑完了就别再刷"
+
+
+def test_htmx缺失提示说的是降级而不是坏了(client):
+    body = client.get("/").text
+    assert "已降级为整页刷新" in body
+    assert "功能都能用" in body

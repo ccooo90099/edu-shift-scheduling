@@ -10,6 +10,7 @@
      而且不报错。见 static/README.md。 #}
   <script src="/static/htmx.min.js"></script>
   <link rel="stylesheet" href="/static/app.css">
+  {% block head_extra %}{% endblock %}
 </head>
 <body>
   {% block nav %}
@@ -28,13 +29,13 @@
   </nav>
   {% endblock %}
 
-  <div id="htmx-missing" class="banner banner-warning" style="margin:12px 24px 0">
-    <span class="banner-icon">⚠</span>
+  <div id="htmx-missing" class="banner banner-info" style="margin:12px 24px 0">
+    <span class="banner-icon">ℹ</span>
     <div class="banner-body">
-      <strong>htmx.min.js 没加载上</strong>
-      <span class="banner-why">页面能看，但进度不会自动刷新 ——
-        请按 <code>static/README.md</code> 放一份进 <code>/static/</code>，
-        否则你会对着一个永远停在「求解中」的页面干等。</span>
+      <strong>htmx.min.js 没加载上，已降级为整页刷新</strong>
+      <span class="banner-why">功能都能用，只是求解进度会整页刷新而不是局部更新。
+        要恢复的话按 <code>static/README.md</code> 放一份进 <code>/static/</code>
+        —— 用 Docker 构建的话正常会自动下载。</span>
     </div>
   </div>
   <script>

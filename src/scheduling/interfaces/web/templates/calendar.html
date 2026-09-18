@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}学年日历 · 排班系统{% endblock %}
+{% block content %}
+{{ ui.page_title('学年日历', '批次的真实起止日期与各期位的上课日') }}
+
+<section class="card">
+  <h2>为什么要填</h2>
+  <p class="note">
+    批次在日期上可能重叠且共用老师。<strong>没有日历，跨批次的老师撞车
+    根本查不出来</strong> —— 体检报告里所有「无冲突」的结论就只在单个批次内成立，
+    而且不会有任何提示说它没查。
+  </p>
+  <p class="note">
+    期位 A / B 是两个场景共用的同一个维度：寒暑假是第一期 / 第二期，
+    春秋季是周六 / 周日。填的是那个期位**实际上课的日期**。
+  </p>
+</section>
+
+{% if overlaps %}
+<section class="card">
+  <h2>日期区间相交的批次</h2>
+  <p class="note">
+    ⚠️ <strong>区间相交 ≠ 实际撞车。</strong> 这里只是提醒你留意，
+    真正的冲突要比对到具体上课日才算数 —— 体检报告里会分开写
+    「已验证」和「估算候选」。
+  </p>
+  <ul>
+    {% for a, b in overlaps %}
+    <li>{{ a.name }}（{{ a.start }} ~ {{ a.end }}）
+        与 {{ b.name }}（{{ b.start }} ~ {{ b.end }}）</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>新增 / 修改批次</h2>
+  <p class="note">批次名相同视为覆盖。</p>
+  <form method="post" action="/calendar" class="form-row">
+    {{ ui.field('批次名', 'name', required=true, hint='如：2026暑假一期') }}
+    {{ ui.select_field('场景', 'season', seasons) }}
+    {{ ui.field('开始日期', 'start', type='date', required=true) }}
+    {{ ui.field('结束日期', 'end', type='date', required=true) }}
+    <label class="field" style="min-width:230px">
+      <span class="field-label">期位 A 的上课日</span>
+      <input name="dates_a" placeholder="2026-07-06,2026-07-07">
+      <span class="field-hint">逗号分隔。寒暑假=第一期，春秋季=周六</span>
+    </label>
+    <label class="field" style="min-width:230px">
+      <span class="field-label">期位 B 的上课日</span>
+      <input name="dates_b" placeholder="2026-07-20,2026-07-21">
+      <span class="field-hint">寒暑假=第二期，春秋季=周日</span>
+    </label>
+    <button type="submit">保存</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>已填批次（{{ batches|length }}）</h2>
+  {% if batches %}
+  <table>
+    <thead><tr>
+      <th>批次</th><th>场景</th><th>区间</th>
+      <th>期位 A 上课日</th><th>期位 B 上课日</th><th></th>
+    </tr></thead>
+    <tbody>
+      {% for b in batches %}
+      <tr>
+        <td><strong>{{ b.name }}</strong></td>
+        <td>{{ b.season.value }}</td>
+        <td>{{ b.start }} ~ {{ b.end }}</td>
+        {% for p in [periods[0][1], periods[1][1]] %}
+        <td>
+          {% set days = b.dates_of(p) %}
+          {% if days %}
+            <small>{{ days|length }} 天：{{ days[0] }} … {{ days[-1] }}</small>
+          {% else %}<small>—</small>{% endif %}
+        </td>
+        {% endfor %}
+        <td>
+          <form method="post" action="/calendar/{{ b.name }}/delete" class="inline">
+            <button type="submit" class="linkish">删除</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    {{ ui.empty_state('还没填日历',
+                      '不填的话跨批次的老师撞车查不出来，而且体检不会提示') }}
+  {% endif %}
+</section>
+{% endblock %}

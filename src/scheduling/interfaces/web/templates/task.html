@@ -1,5 +1,23 @@
 {% extends "base.html" %}
 {% block title %}{{ task.name }} · 排班系统{% endblock %}
+
+{% block head_extra %}
+{% if not task.status.is_terminal %}
+{# 进度刷新的兜底：htmx 没加载上时，用整页 meta refresh 顶上。
+   这样「进度不会动」就不再取决于某个静态文件在不在 —— 那个文件
+   缺了只会让体验差一点（整页刷新而不是局部），不会让人对着
+   一个永远停在「求解中」的页面干等。
+   动态插入而不是写死在 HTML 里：htmx 在的话就不插，免得两套刷新打架。 #}
+<script>
+  if (!window.htmx) {
+    var m = document.createElement('meta');
+    m.httpEquiv = 'refresh';
+    m.content = '3';
+    document.head.appendChild(m);
+  }
+</script>
+{% endif %}
+{% endblock %}
 {% block content %}
 {{ ui.page_title(task.name, task.season) }}
 
