@@ -14,7 +14,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import (
+    FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -25,6 +26,7 @@ from ...domain.model.timeslot import TimeSlot
 from ...domain.model.venue import Center, Coordinate, MAP_SOURCE_DATUM, Room
 from ...domain.policy.travel import normalize_adjacency
 from .container import Container
+from .gate import COOKIE_NAME, PasswordGate, is_public, safe_next, startup_banner
 
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(HERE / "templates"))
@@ -76,15 +78,64 @@ def _save_caps(c: Container, caps: dict) -> None:
         json.dumps(caps, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def create_app(container: Container | None = None) -> FastAPI:
-    app = FastAPI(title="排班系统", docs_url="/api/docs")
+def create_app(container: Container | None = None,
+               gate: PasswordGate | None = None) -> FastAPI:
+    app = FastAPI(title="排班系统", docs_url=None, redoc_url=None)
     app.state.container = container or Container.build()
+    app.state.gate = gate or PasswordGate()
     static = HERE / "static"
     static.mkdir(exist_ok=True)
     app.mount("/static", StaticFiles(directory=str(static)), name="static")
 
+    print(startup_banner(app.state.gate), flush=True)
+
     def get_container(request: Request) -> Container:
         return request.app.state.container
+
+    @app.middleware("http")
+    async def require_password(request: Request, call_next):
+        """口令门禁。放行的路径见 gate.PUBLIC_PREFIXES。
+
+        API 走 401 + JSON（curl 拿到一坨登录页 HTML 会很莫名），
+        页面走 302 到登录页并带上 next，登录完回到原处。
+        """
+        if is_public(request.url.path) or request.app.state.gate.verify(
+                request.cookies.get(COOKIE_NAME)):
+            return await call_next(request)
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"detail": "需要口令，先访问 /login"}, status_code=401)
+        return RedirectResponse("/login?next=%s" % request.url.path, status_code=303)
+
+    @app.get("/healthz", response_class=PlainTextResponse)
+    def healthz():
+        """容器探活。**不能拿 /api/readiness 当探活** —— 那个要口令，
+        容器会一直被判成不健康。"""
+        return "ok"
+
+    @app.get("/login", response_class=HTMLResponse)
+    def login_page(request: Request, next: str = "/", error: str = ""):
+        return templates.TemplateResponse(
+            request, "login.html",
+            {"next": next or "/", "error": error, "readiness": []})
+
+    @app.post("/login")
+    def do_login(request: Request, password: str = Form(""), next: str = Form("/")):
+        if not request.app.state.gate.check_password(password):
+            return RedirectResponse(
+                "/login?next=%s&error=1" % (next or "/"), status_code=303)
+        resp = RedirectResponse(safe_next(next), status_code=303)
+        resp.set_cookie(
+            COOKIE_NAME, request.app.state.gate.issue(),
+            max_age=request.app.state.gate.ttl_seconds,
+            httponly=True,        # JS 读不到，少一条泄露途径
+            samesite="lax")
+        return resp
+
+    @app.post("/logout")
+    def do_logout():
+        resp = RedirectResponse("/login", status_code=303)
+        resp.delete_cookie(COOKIE_NAME)
+        return resp
 
     def render(request: Request, template: str, **ctx) -> HTMLResponse:
         """所有页面共用的渲染入口 —— 顺手把告警条数据带上，

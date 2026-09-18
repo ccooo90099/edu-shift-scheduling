@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
+  {% block nav %}
   <nav class="topnav">
     <a class="brand" href="/">排班系统</a>
     <a href="/centers">中心</a>
@@ -20,8 +21,12 @@
     <a href="/regions">区域相邻</a>
     <a href="/calendar">学年日历</a>
     <span class="spacer"></span>
-    <span class="env">内网 · 无需登录</span>
+    <span class="env">测试 demo</span>
+    <form method="post" action="/logout" style="display:inline">
+      <button type="submit" class="linkish">退出</button>
+    </form>
   </nav>
+  {% endblock %}
 
   <div id="htmx-missing" class="banner banner-warning" style="margin:12px 24px 0">
     <span class="banner-icon">⚠</span>
@@ -38,7 +43,7 @@
     if (window.htmx) document.getElementById('htmx-missing').remove();
   </script>
 
-  {{ ui.readiness_banner(readiness) }}
+  {% block banner %}{{ ui.readiness_banner(readiness) }}{% endblock %}
 
   <main>{% block content %}{% endblock %}</main>
 

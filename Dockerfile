@@ -33,7 +33,7 @@ USER app
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/api/readiness', timeout=4)"
+    CMD python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/healthz', timeout=4)"
 
 # 内网并发个位数，单 worker 足够。求解本身在应用内的线程池里跑，
 # 多开 worker 反而会让任务状态分散在各进程的内存里。

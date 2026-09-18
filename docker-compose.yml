@@ -15,9 +15,15 @@ services:
       - ./config:/app/config:ro
     environment:
       SCHEDULING_DATA: /app/data
+      # 口令门禁。不设的话每次启动随机生成一个，打在启动日志里。
+      # 设了就固定下来，重启不变。
+      # SCHEDULING_PASSWORD: 换成你的口令
+      #
+      # 会话签名密钥。不设的话每次启动换一把，重启即全部重新登录。
+      # SCHEDULING_SECRET: 一串随机字符串
     healthcheck:
       test: ["CMD", "python", "-c",
-             "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/api/readiness', timeout=4)"]
+             "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/healthz', timeout=4)"]
       interval: 30s
       timeout: 5s
       retries: 3

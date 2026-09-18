@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}口令 · 排班系统{% endblock %}
+{% block nav %}{% endblock %}
+{% block banner %}{% endblock %}
+{% block content %}
+<div class="login-wrap">
+  <section class="card login-card">
+    <h1>排班系统</h1>
+    <p class="sub">这是测试 demo，访问需要口令。</p>
+
+    {% if error %}
+    <div class="banner banner-warning" style="margin:0 0 14px">
+      <span class="banner-icon">⚠</span>
+      <div class="banner-body"><strong>口令不对</strong></div>
+    </div>
+    {% endif %}
+
+    <form method="post" action="/login">
+      <input type="hidden" name="next" value="{{ next }}">
+      <label class="field">
+        <span class="field-label">口令</span>
+        <input type="password" name="password" autofocus required
+               autocomplete="current-password">
+        <span class="field-hint">找部署这套系统的人要，启动日志里也打了一份</span>
+      </label>
+      <button type="submit" style="margin-top:12px;width:100%">进入</button>
+    </form>
+
+    <p class="note" style="margin-top:20px">
+      <strong>这是门禁，不是认证。</strong>
+      全站一个共享口令、不分人，日志里查不出谁做了什么；
+      口令泄露了只能换一个重启。它挡的是误闯的路人，
+      <strong>不是保护真实数据的手段</strong>。
+    </p>
+  </section>
+</div>
+{% endblock %}

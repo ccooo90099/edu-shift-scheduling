@@ -11,22 +11,38 @@ from scheduling.infrastructure.persistence.sqlite import (
     SqliteInstructorRepository, SqliteTaskRepository, connect)
 from scheduling.interfaces.web.app import create_app
 from scheduling.interfaces.web.container import Container
+from scheduling.interfaces.web.gate import COOKIE_NAME, PasswordGate
+
+
+TEST_PASSWORD = "demo-pass"
 
 
 @pytest.fixture
 def app(tmp_path):
     conn = connect(tmp_path / "t.db")
-    return create_app(Container(
-        centers=SqliteCenterRepository(conn),
-        instructors=SqliteInstructorRepository(conn),
-        calendars=SqliteCalendarRepository(conn),
-        tasks=SqliteTaskRepository(conn),
-        data_dir=tmp_path))
+    return create_app(
+        Container(
+            centers=SqliteCenterRepository(conn),
+            instructors=SqliteInstructorRepository(conn),
+            calendars=SqliteCalendarRepository(conn),
+            tasks=SqliteTaskRepository(conn),
+            data_dir=tmp_path),
+        gate=PasswordGate(password=TEST_PASSWORD, secret="test-secret"))
+
+
+@pytest.fixture
+def anon(app):
+    """没过门禁的客户端。"""
+    return TestClient(app)
 
 
 @pytest.fixture
 def client(app):
-    return TestClient(app)
+    """过了门禁的客户端 —— 绝大多数测试用这个。"""
+    c = TestClient(app)
+    r = c.post("/login", data={"password": TEST_PASSWORD, "next": "/"})
+    assert r.status_code in (200, 303)
+    return c
 
 
 def test_首页能打开(client):
@@ -246,3 +262,94 @@ def test_校区上限非法输入被拒(client):
     client.post("/centers", data={"name": "甲中心", "campus": "甲"})
     assert client.post("/capacity", data={"campus": "甲", "cap": "abc"}).status_code == 400
     assert client.post("/capacity", data={"campus": "甲", "cap": "-1"}).status_code == 400
+
+
+# ── 口令门禁 ────────────────────────────────────────────────
+#
+# ⚠️ 这是门禁不是认证：全站一个共享口令、不分人、泄露了只能换一个重启。
+# 它挡的是误闯的路人，不是保护真实数据的手段。
+
+def test_没口令时页面被挡去登录页(anon):
+    r = anon.get("/", follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"].startswith("/login")
+
+
+def test_没口令时API返回401而不是一坨登录页HTML(anon):
+    """curl 拿到 HTML 会很莫名，而且状态码还是 200。"""
+    r = anon.get("/api/readiness")
+    assert r.status_code == 401
+    assert r.json()["detail"].endswith("/login")
+
+
+def test_登录页和静态资源不需要口令(anon):
+    assert anon.get("/login").status_code == 200
+    assert anon.get("/static/app.css").status_code == 200
+
+
+def test_探活不需要口令(anon):
+    """否则容器会一直被判成不健康 —— 不能拿 /api/readiness 当探活。"""
+    r = anon.get("/healthz")
+    assert r.status_code == 200 and r.text == "ok"
+
+
+def test_口令对了才放行(anon):
+    assert anon.post("/login", data={"password": "错的"},
+                     follow_redirects=False).headers["location"].endswith("error=1")
+    assert anon.get("/", follow_redirects=False).status_code == 303
+
+    anon.post("/login", data={"password": TEST_PASSWORD})
+    assert anon.get("/").status_code == 200
+
+
+def test_登录后回到原来想去的页面(anon):
+    r = anon.post("/login", data={"password": TEST_PASSWORD, "next": "/centers"},
+                  follow_redirects=False)
+    assert r.headers["location"] == "/centers"
+
+
+def test_不做开放重定向(anon):
+    """next=//evil.com 会被浏览器当成协议相对 URL 跳到外站。"""
+    for bad in ("//evil.com", "https://evil.com", "javascript:alert(1)"):
+        r = anon.post("/login", data={"password": TEST_PASSWORD, "next": bad},
+                      follow_redirects=False)
+        assert r.headers["location"] == "/", bad
+
+
+def test_通行证不能伪造(anon):
+    anon.cookies.set(COOKIE_NAME, "99999999999.deadbeef")
+    assert anon.get("/", follow_redirects=False).status_code == 303
+
+
+def test_通行证会过期(app):
+    """签发时就把过期时间签进去，改了签名就对不上。"""
+    g = app.state.gate
+    token = g.issue(now=0)
+    assert g.verify(token, now=0)
+    assert not g.verify(token, now=g.ttl_seconds + 1)
+
+
+def test_cookie是httponly(anon):
+    r = anon.post("/login", data={"password": TEST_PASSWORD},
+                  follow_redirects=False)
+    assert "httponly" in r.headers["set-cookie"].lower()
+
+
+def test_退出后又被挡在外面(client):
+    assert client.get("/").status_code == 200
+    client.post("/logout")
+    assert client.get("/", follow_redirects=False).status_code == 303
+
+
+def test_登录页把门禁的局限说清楚(anon):
+    """别让人以为这是安全模块。"""
+    body = anon.get("/login").text
+    assert "不是认证" in body
+    assert "共享口令" in body
+
+
+def test_随机口令不含易混字符():
+    """0/O、1/l/I 口头念或手抄容易错。"""
+    from scheduling.interfaces.web.gate import generate_password
+    for _ in range(50):
+        assert not (set(generate_password()) & set("0O1lI"))
