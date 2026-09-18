@@ -96,54 +96,56 @@ def _config_path() -> str:
 CONFIG_PATH = _config_path()
 
 
-def _unplaced_from_workbook(path) -> list[dict]:
-    """从明细里挑出没排上的团队。
-
-    「6 个没排上」这个数字本身没用 —— 得知道是**哪 6 个**，
-    才谈得上去加老师还是加教室。
-    """
-    from openpyxl import load_workbook
-    wb = load_workbook(path, read_only=True)
-    if "排班明细" not in wb.sheetnames:
-        wb.close()
-        return []
-    rows = list(wb["排班明细"].iter_rows(values_only=True))
-    wb.close()
-    if not rows:
-        return []
-    head = [str(h or "") for h in rows[0]]
-    idx = {name: head.index(name) for name in head}
-    out = []
-    for r in rows[1:]:
-        slot = r[idx.get("首次服务时间", -1)] if "首次服务时间" in idx else None
-        if slot:
-            continue
-        out.append({k: (r[i] if i < len(r) else "") for k, i in idx.items()})
-    return out
+#: 解析结果按 (路径, 修改时间) 缓存。
+#: 产物一旦写出就不再变，而进度页每 2–3 秒刷一次 —— 每次都重新解析
+#: 整个 xlsx 在 Render 免费档那种共享 CPU 上是实打实的卡顿来源。
+_BOARD_CACHE: dict[tuple, dict] = {}
 
 
-def _board_from_workbook(path) -> dict:
-    """从产物里读回看板。
+def _read_workbook(path) -> dict:
+    """一次打开，把看板、明细、没排上的全读出来。
 
     直接读已经写好的 xlsx，而不是在内存里再拼一次 —— 网页看到的和
     下载下来的必须是同一份东西，两处各算一遍迟早会对不上。
+
+    ⚠️ 之前这里把工作簿开了**三次**（看板一次、判断明细在不在一次、
+    读明细一次）。产物不大时看不出来，在慢机器上每次刷新都要等。
     """
     from openpyxl import load_workbook
+
+    key = (str(path), Path(path).stat().st_mtime_ns)
+    hit = _BOARD_CACHE.get(key)
+    if hit is not None:
+        return hit
+
     wb = load_workbook(path, read_only=True)
-    if "看板" not in wb.sheetnames:
-        return {"grid": None}
-    rows = [[c if c is not None else "" for c in r]
-            for r in wb["看板"].iter_rows(values_only=True)]
-    wb.close()
-    if not rows:
-        return {"grid": None}
-    detail = []
-    if "排班明细" in load_workbook(path, read_only=True).sheetnames:
-        wb2 = load_workbook(path, read_only=True)
-        detail = [list(r) for r in wb2["排班明细"].iter_rows(values_only=True)]
-        wb2.close()
-    return {"grid": {"head": rows[0], "body": rows[1:]},
-            "detail": {"head": detail[0], "body": detail[1:]} if detail else None}
+    try:
+        board = ([[c if c is not None else "" for c in r]
+                  for r in wb["看板"].iter_rows(values_only=True)]
+                 if "看板" in wb.sheetnames else [])
+        detail = ([list(r) for r in wb["排班明细"].iter_rows(values_only=True)]
+                  if "排班明细" in wb.sheetnames else [])
+    finally:
+        wb.close()
+
+    unplaced = []
+    if detail:
+        head = [str(h or "") for h in detail[0]]
+        if "首次服务时间" in head:
+            slot_at = head.index("首次服务时间")
+            for row in detail[1:]:
+                if slot_at < len(row) and not row[slot_at]:
+                    unplaced.append({k: (row[i] if i < len(row) else "")
+                                     for i, k in enumerate(head)})
+
+    result = {
+        "grid": {"head": board[0], "body": board[1:]} if board else None,
+        "detail": {"head": detail[0], "body": detail[1:]} if detail else None,
+        "unplaced": unplaced,
+    }
+    _BOARD_CACHE.clear()          # 只留最近一份，别让它无限长
+    _BOARD_CACHE[key] = result
+    return result
 
 
 def create_app(container: Container | None = None,
@@ -451,14 +453,12 @@ def create_app(container: Container | None = None,
         task = c.tasks.get(task_id)
         if task is None:
             raise HTTPException(404, "没有这个任务")
-        extra = {"grid": None, "unplaced": [], "placed": 0}
+        extra = {"grid": None, "unplaced": [], "placed": 0, "total": 0}
         if task.output_path and Path(task.output_path).exists():
-            extra.update(_board_from_workbook(task.output_path))
-            extra["unplaced"] = _unplaced_from_workbook(task.output_path)
+            extra.update(_read_workbook(task.output_path))
             detail = extra.get("detail")
-            total = len(detail["body"]) if detail else 0
-            extra["placed"] = total - len(extra["unplaced"])
-            extra["total"] = total
+            extra["total"] = len(detail["body"]) if detail else 0
+            extra["placed"] = extra["total"] - len(extra["unplaced"])
         return render(request, "task.html", task=task, **extra)
 
     @app.get("/tasks/{task_id}/progress", response_class=HTMLResponse)
@@ -565,7 +565,7 @@ def create_app(container: Container | None = None,
         if not task.output_path or not Path(task.output_path).exists():
             return render(request, "board.html", task=task, grid=None)
         return render(request, "board.html", task=task,
-                      **_board_from_workbook(task.output_path))
+                      **_read_workbook(task.output_path))
 
     @app.get("/tasks/{task_id}/download")
     def download(task_id: str, c: Container = Depends(get_container)):

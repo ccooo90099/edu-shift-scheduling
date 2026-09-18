@@ -1,5 +1,18 @@
 {% extends "base.html" %}
 {% block content %}
+<script>
+  // 点了之后立刻变成「在干活」——生成清单和启动求解要一两秒，
+  // 这段时间没反馈的话人会以为没点上，然后再点一次。
+  function busy(form, text) {
+    var b = form.querySelector('button[type=submit]');
+    if (!b) return;
+    b.disabled = true;
+    b.innerHTML = '<span class="spinner" style="border-top-color:#fff;' +
+                  'border-color:rgba(255,255,255,.35);border-top-color:#fff">' +
+                  '</span> ' + text;
+    setTimeout(function(){ form.submit(); }, 0);
+  }
+</script>
 {{ ui.page_title('排班任务', '上传团队清单 → 自动求解 → 看板与 Excel') }}
 
 <section class="card">
@@ -9,7 +22,7 @@
     结构照着真实那份排班表来（文学楼只上文学美育、S7 不开物理化学、
     指导员以单产品为主），<strong>名字全是编的</strong>。
   </p>
-  <form method="post" action="/tasks/demo">
+  <form method="post" action="/tasks/demo" onsubmit="busy(this,'正在生成并求解…')">
     <button type="submit">一键跑示例排班</button>
   </form>
 </section>
@@ -25,7 +38,7 @@
       <input type="file" name="upload" accept=".xlsx" required>
       <span class="field-hint">xlsx。要有 中心/程度/产品/团队类型 等列</span>
     </label>
-    <button type="submit">建任务并开始求解</button>
+    <button type="submit" onclick="busy(this.form,'正在上传并求解…')">建任务并开始求解</button>
   </form>
   <p class="note">
     建完就会在后台开始算，进度自动刷新。求解可能要一两分钟 ——

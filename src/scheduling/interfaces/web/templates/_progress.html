@@ -7,32 +7,41 @@
      hx-swap="outerHTML"
      {% endif %}>
 
+  {% if not task.status.is_terminal %}
+  {# 求解要几秒到几分钟，中间必须看得出在动。
+     用来回跑的条而不是百分比 —— 我们并不知道还要多久，
+     假装知道比没有更糟。 #}
+  <div class="solving">
+    <span class="spinner"></span>
+    <div class="solving-body">
+      <strong>{{ '正在求解…' if task.status.value == 'running' else '排队中…' }}</strong>
+      <span class="why">
+        已用 {{ '%.0f' % task.elapsed_seconds }} 秒。
+        求解器要在所有可能的排法里找最优的，规模大时要一两分钟。
+        <strong>这个页面会自己刷新</strong>，不用手动刷。
+      </span>
+      <div class="bar"><i></i></div>
+    </div>
+  </div>
+  {% else %}
   <div class="progress-head">
     <span class="badge badge-{{ 'ok' if task.status.value == 'done'
-                                else 'bad' if task.status.value == 'failed'
-                                else 'run' }}">{{ task.status.label }}</span>
-    <span class="elapsed">已用 {{ '%.1f' % task.elapsed_seconds }} 秒</span>
+                                else 'bad' }}">{{ task.status.label }}</span>
+    <span class="elapsed">用时 {{ '%.1f' % task.elapsed_seconds }} 秒</span>
   </div>
+  {% endif %}
 
   {% if task.solver_status %}
   <dl class="kv">
     <dt>求解状态</dt>
     <dd>
-      <strong>{{ task.solver_status }}</strong>
+      <strong>{{ '已证明最优' if task.solver_status == 'OPTIMAL' else task.solver_status }}</strong>
+      {% if task.solver_status != 'OPTIMAL' %}
       <span class="gap">{{ task.gap_hint }}</span>
+      {% endif %}
     </dd>
-    {% if task.objective is not none %}
-    <dt>目标值</dt><dd>{{ '%.0f' % task.objective }}</dd>
-    <dt>下界</dt><dd>{{ '%.0f' % task.best_bound }}</dd>
-    {% endif %}
     <dt>没排上</dt><dd>{{ task.unplaced }} 个团队</dd>
   </dl>
-  {% endif %}
-
-  {% if task.notes %}
-  <ul class="notes">
-    {% for n in task.notes %}<li>{{ n }}</li>{% endfor %}
-  </ul>
   {% endif %}
 
   {% if task.error %}<pre class="error">{{ task.error }}</pre>{% endif %}

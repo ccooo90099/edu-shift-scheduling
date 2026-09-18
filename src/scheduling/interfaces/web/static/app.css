@@ -258,3 +258,37 @@ footer{max-width:1120px;margin:0 auto;
   .form-row{grid-template-columns:1fr}
   .banner-stack{padding:var(--s3) var(--s4) 0}
 }
+
+/* ── 加载状态 ─────────────────────────────────────────
+   等待期间必须看得出「它在动」。用户等 3 秒没反馈就会以为卡死了 ——
+   这比多等几秒本身更劝退。 */
+.spinner{
+  display:inline-block;width:14px;height:14px;flex-shrink:0;
+  border:2px solid var(--accent-soft);border-top-color:var(--accent);
+  border-radius:50%;animation:spin .7s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.solving{
+  display:flex;gap:var(--s3);align-items:flex-start;
+  padding:var(--s4);background:var(--run-bg);
+  border:1px solid #c8daf0;border-radius:var(--radius);
+  margin-bottom:var(--s3);
+}
+.solving-body{flex:1;min-width:0}
+.solving-body strong{display:block;color:var(--run);margin-bottom:2px}
+.solving-body .why{font-size:13px;color:var(--fg-2);line-height:1.6}
+.solving .spinner{margin-top:3px;width:16px;height:16px}
+
+/* 进度条：不知道还要多久，用来回跑的条表示「在动」，
+   而不是假装知道进度百分比 */
+.bar{height:3px;background:var(--accent-soft);border-radius:2px;
+  overflow:hidden;margin-top:var(--s3)}
+.bar i{display:block;height:100%;width:35%;background:var(--accent);
+  border-radius:2px;animation:slide 1.4s ease-in-out infinite}
+@keyframes slide{
+  0%{margin-left:-35%} 50%{margin-left:70%} 100%{margin-left:-35%}
+}
+
+/* 点了按钮之后立刻变样，不然会以为没点上 */
+button[disabled]{opacity:.6;cursor:wait}

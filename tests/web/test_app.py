@@ -637,3 +637,69 @@ def test_跑完但没有产物时页面不会是空的(client, app):
         solver_status="FEASIBLE", objective=1.0, best_bound=0.0))
     html = client.get("/tasks/noout").text
     assert "求解进度" in html and "FEASIBLE" in html
+
+
+# ── 加载状态（用户：「速度出来太慢以为没结果」）────────────
+
+def test_求解中要看得出在动(client, app):
+    """等 3 秒没反馈就会以为卡死了 —— 这比多等几秒本身更劝退。"""
+    from datetime import datetime, timedelta
+    from scheduling.application.dto import SolveTask, TaskStatus
+    app.state.container.tasks.create(SolveTask(
+        id="run1", name="进行中", season="寒暑假", status=TaskStatus.RUNNING,
+        started_at=datetime.now() - timedelta(seconds=7)))
+
+    frag = client.get("/tasks/run1/progress").text
+    assert 'class="spinner"' in frag, "要有转圈动画"
+    assert "正在求解" in frag
+    assert "已用 7 秒" in frag, "要让人知道等了多久"
+    assert 'class="bar"' in frag, "要有动的进度条"
+    assert "这个页面会自己刷新" in frag, "免得人一直手动刷"
+
+
+def test_进度条不假装知道还剩多久(client, app):
+    """我们并不知道求解还要多久。显示一个假的百分比比没有更糟。"""
+    css = client.get("/static/app.css").text
+    assert "@keyframes slide" in css, "来回跑的条，不是按比例填充的"
+    assert "width:35%" in css.replace(" ", ""), "宽度固定，不随进度变"
+
+
+def test_跑完就不再转圈(client, seeded):
+    tid = client.post("/tasks/demo", follow_redirects=False) \
+        .headers["location"].rsplit("/", 1)[-1]
+    assert _等任务(seeded.tasks, tid, seconds=180).status.value == "done"
+    html = client.get("/tasks/%s" % tid).text
+    assert 'class="spinner"' not in html
+    assert 'class="board"' in html
+
+
+def test_点了按钮立刻有反馈(client):
+    """生成清单和启动求解要一两秒，没反馈的话人会以为没点上、再点一次。"""
+    body = client.get("/").text
+    assert "function busy" in body
+    assert "正在生成并求解" in body
+    assert "正在上传并求解" in body
+
+
+def test_产物解析结果会缓存_不必每次刷新都重读(client, seeded):
+    """进度页每 2-3 秒刷一次，每次重新解析整个 xlsx 在慢机器上是
+    实打实的卡顿来源。产物写出后就不再变，可以按修改时间缓存。"""
+    import time
+    from scheduling.interfaces.web import app as appmod
+
+    tid = client.post("/tasks/demo", follow_redirects=False) \
+        .headers["location"].rsplit("/", 1)[-1]
+    task = _等任务(seeded.tasks, tid, seconds=180)
+    assert task.status.value == "done"
+
+    appmod._BOARD_CACHE.clear()
+    t0 = time.monotonic()
+    client.get("/tasks/%s" % tid)
+    first = time.monotonic() - t0
+    assert appmod._BOARD_CACHE, "第一次要填进缓存"
+
+    t0 = time.monotonic()
+    for _ in range(3):
+        client.get("/tasks/%s" % tid)
+    cached = (time.monotonic() - t0) / 3
+    assert cached < first, "走缓存要比重新解析快"
