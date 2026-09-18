@@ -44,9 +44,9 @@
         <td>
           <form method="post" action="/regions" class="inline">
             <input type="hidden" name="region" value="{{ r }}">
-            <input name="neighbours" size="24" placeholder="逗号分隔"
+            <input name="neighbours" class="w-mid" placeholder="逗号分隔"
                    value="{{ raw.get(r, []) | join(',') }}">
-            <button type="submit">存</button>
+            <button type="submit" class="ghost">存</button>
           </form>
         </td>
       </tr>

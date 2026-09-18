@@ -41,6 +41,15 @@ DEFAULT_WEIGHTS: dict[str, int] = {
 }
 
 
+#: 旧键名 → 新键名。报错时给出改名指引，而不是只说「不认识」。
+RENAMED: dict[str, str] = {
+    "未排上团队": "排不上团队",
+    "跨中心一次": "转场一次",
+    "连堂不相邻": "连堂未达标",
+    "工作量方差": "工作量峰值",
+}
+
+
 @dataclass
 class Weights:
     """生效权重。`effective_report()` 的输出应当打进日志和界面。"""
@@ -54,9 +63,19 @@ class Weights:
         supplied.update(overrides)
         unknown = set(supplied) - set(DEFAULT_WEIGHTS)
         if unknown:
+            hints = []
+            for key in sorted(unknown):
+                new_name = RENAMED.get(key)
+                hints.append("  %s%s" % (
+                    key, " → 现在叫「%s」" % new_name if new_name
+                    else "（已废弃，删掉即可）"))
             raise ValueError(
-                "未知权重键：%s。改键名时必须同步求解与体检两侧，"
-                "否则一侧会静默用默认值。" % "、".join(sorted(unknown)))
+                "配置里有 %d 个权重键对不上：\n%s\n"
+                "可用的键：%s\n"
+                "—— 之所以直接报错而不是忽略：静默忽略会让你调的权重完全不生效，"
+                "这个项目真踩过（连调三轮没反应）。" % (
+                    len(unknown), "\n".join(hints),
+                    "、".join(sorted(DEFAULT_WEIGHTS))))
         merged.update(supplied)
         return cls(merged, tuple(sorted(supplied)))
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from datetime import date
+from datetime import date, datetime
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -26,6 +26,7 @@ from ...domain.model.curriculum import product_of
 from ...domain.model.instructor import Instructor
 from ...domain.model.timeslot import TimeSlot
 from ...domain.model.venue import Center, Coordinate, MAP_SOURCE_DATUM, Room
+from ...application.use_cases.build_problem import BuildProblem
 from ...application.use_cases.seed_demo import SeedDemo
 from ...domain.model.academic_calendar import AcademicCalendar, Batch
 from ...domain.model.period import Period, Season
@@ -81,6 +82,41 @@ def _load_caps(c: Container) -> dict:
 def _save_caps(c: Container, caps: dict) -> None:
     _caps_path(c).write_text(
         json.dumps(caps, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+#: 规则配置。真实的 config/rules.yaml 不入库；没有就退回示例。
+def _config_path() -> str:
+    for name in ("config/rules.yaml", "config/rules.example.yaml"):
+        if Path(name).exists():
+            return name
+    return ""
+
+
+CONFIG_PATH = _config_path()
+
+
+def _board_from_workbook(path) -> dict:
+    """从产物里读回看板。
+
+    直接读已经写好的 xlsx，而不是在内存里再拼一次 —— 网页看到的和
+    下载下来的必须是同一份东西，两处各算一遍迟早会对不上。
+    """
+    from openpyxl import load_workbook
+    wb = load_workbook(path, read_only=True)
+    if "看板" not in wb.sheetnames:
+        return {"grid": None}
+    rows = [[c if c is not None else "" for c in r]
+            for r in wb["看板"].iter_rows(values_only=True)]
+    wb.close()
+    if not rows:
+        return {"grid": None}
+    detail = []
+    if "排班明细" in load_workbook(path, read_only=True).sheetnames:
+        wb2 = load_workbook(path, read_only=True)
+        detail = [list(r) for r in wb2["排班明细"].iter_rows(values_only=True)]
+        wb2.close()
+    return {"grid": {"head": rows[0], "body": rows[1:]},
+            "detail": {"head": detail[0], "body": detail[1:]} if detail else None}
 
 
 def create_app(container: Container | None = None,
@@ -401,6 +437,35 @@ def create_app(container: Container | None = None,
         return templates.TemplateResponse(
             request, "_progress.html", {"task": task})
 
+    def _solve_in_background(task_id: str) -> None:
+        """后台跑一次完整的排班：读表 → 求解 → 体检 → 写 xlsx。
+
+        求解可能几分钟不收敛，所以不能在请求里做。异常一律记到任务上，
+        不要让线程池吞掉 —— 任务永远停在「求解中」比报错更难查。
+        """
+        c = app.state.container
+        task = c.tasks.get(task_id)
+        if task is None:
+            return
+        try:
+            problem = BuildProblem()(
+                task.input_path, CONFIG_PATH,
+                season=Season(task.season),
+                centers_repo=c.centers, instructors_repo=c.instructors,
+                calendar_repo=c.calendars)
+            problem.campus_caps = _load_caps(c)
+            problem.region_adjacency = normalize_adjacency(_load_adjacency(c))
+        except Exception as exc:                       # noqa: BLE001
+            task.status = TaskStatus.FAILED
+            task.error = "读输入失败 —— %s: %s" % (type(exc).__name__, exc)
+            task.finished_at = datetime.now()
+            c.tasks.update(task)
+            return
+
+        out = c.data_dir / "outputs" / ("%s.xlsx" % task_id)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        c.run_solve(task, problem, out)
+
     @app.post("/tasks")
     async def create_task(name: str = Form(...), season: str = Form("寒暑假"),
                           upload: UploadFile | None = None,
@@ -411,8 +476,40 @@ def create_app(container: Container | None = None,
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(await upload.read())
             task.input_path = str(dest)
+        else:
+            # 没有团队清单就没得排。明说，别让任务卡在「排队中」等一个
+            # 永远不会来的求解。
+            task.status = TaskStatus.FAILED
+            task.error = "没有上传团队清单，无法排班。请上传一份 xlsx 后重建任务。"
+            task.finished_at = datetime.now()
         c.tasks.create(task)
+        if task.input_path:
+            _pool.submit(_solve_in_background, task.id)
         return RedirectResponse("/tasks/%s" % task.id, status_code=303)
+
+    @app.post("/tasks/{task_id}/rerun")
+    def rerun(task_id: str, c: Container = Depends(get_container)):
+        task = c.tasks.get(task_id)
+        if task is None or not task.input_path:
+            raise HTTPException(404, "没有这个任务，或者它没有输入文件")
+        task.status = TaskStatus.PENDING
+        task.error = ""
+        task.notes = []
+        c.tasks.update(task)
+        _pool.submit(_solve_in_background, task_id)
+        return RedirectResponse("/tasks/%s" % task_id, status_code=303)
+
+    @app.get("/tasks/{task_id}/board", response_class=HTMLResponse)
+    def board(request: Request, task_id: str,
+              c: Container = Depends(get_container)):
+        """看板：行 = 校区，列 = 期位 × 时段。不下载 xlsx 也能看结果。"""
+        task = c.tasks.get(task_id)
+        if task is None:
+            raise HTTPException(404, "没有这个任务")
+        if not task.output_path or not Path(task.output_path).exists():
+            return render(request, "board.html", task=task, grid=None)
+        return render(request, "board.html", task=task,
+                      **_board_from_workbook(task.output_path))
 
     @app.get("/tasks/{task_id}/download")
     def download(task_id: str, c: Container = Depends(get_container)):

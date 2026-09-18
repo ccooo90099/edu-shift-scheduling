@@ -24,38 +24,44 @@
   {% if centers %}
   <table>
     <thead><tr>
-      <th>中心</th><th>校区</th><th>区域</th><th>教室</th><th>坐标</th><th>补录</th>
+      <th>中心</th><th>区域</th><th class="num">教室</th>
+      <th>坐标</th><th>补录经纬度</th>
     </tr></thead>
     <tbody>
       {% for c in centers %}
       <tr>
-        <td>{{ c.name }}</td>
-        <td>{{ c.campus }}</td>
-        <td>{{ c.region or '—' }}</td>
         <td>
-          <form method="post" action="/centers/{{ c.name }}/rooms" class="inline">
+          <strong>{{ c.name }}</strong>
+          <span class="cell-sub">{{ c.campus }} 校区</span>
+        </td>
+        <td>{{ c.region or '—' }}</td>
+        <td class="num">
+          <form method="post" action="/centers/{{ c.name }}/rooms" class="inline"
+                style="justify-content:flex-end">
             <input type="number" name="count" value="{{ c.room_count }}"
-                   min="0" size="3" style="width:60px">
-            <button type="submit">改</button>
+                   min="0" class="w-num">
+            <button type="submit" class="ghost">改</button>
           </form>
-          {% if c.rooms_are_estimated %}{{ ui.badge('估计', 'warn') }}{% endif %}
+          {% if c.rooms_are_estimated %}
+          <span class="cell-sub">{{ ui.badge('估计值', 'warn') }}</span>
+          {% endif %}
         </td>
         <td>
           {% if c.has_coordinate %}
             {{ ui.badge(c.coordinate.datum.value, 'ok') }}
-            <small>{{ c.located_by or '—' }}</small>
+            <span class="cell-sub">{{ c.located_by or '—' }}</span>
           {% else %}
-            {{ ui.badge('缺', 'bad') }}
+            {{ ui.badge('缺坐标', 'bad') }}
           {% endif %}
         </td>
         <td>
           <form method="post" action="/centers/{{ c.name }}/coordinate" class="inline">
-            <select name="map_source">
+            <select name="map_source" style="width:92px">
               {% for s in map_sources %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
             </select>
-            <input name="longitude" placeholder="经度" size="9" required>
-            <input name="latitude" placeholder="纬度" size="9" required>
-            <button type="submit">存</button>
+            <input name="longitude" placeholder="经度" class="w-coord" required>
+            <input name="latitude" placeholder="纬度" class="w-coord" required>
+            <button type="submit" class="ghost">存</button>
           </form>
         </td>
       </tr>

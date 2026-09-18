@@ -36,8 +36,8 @@
   {% if rows %}
   <table>
     <thead><tr>
-      <th>校区</th><th>下属中心</th><th>教室合计</th>
-      <th>校区并发上限</th><th>实际生效</th>
+      <th>校区</th><th>下属中心</th><th class="num">教室合计</th>
+      <th class="num">校区并发上限</th><th>实际生效</th>
     </tr></thead>
     <tbody>
       {% for r in rows %}
@@ -48,17 +48,18 @@
           {% for c in r.centers %}{{ c.name }}（{{ c.room_count }} 间）{% if not loop.last %} · {% endif %}{% endfor %}
           </small>
         </td>
-        <td>
+        <td class="num">
           {{ r.room_total }}
-          {% if r.estimated %}{{ ui.badge('含估计', 'warn') }}{% endif %}
+          {% if r.estimated %}<span class="cell-sub">{{ ui.badge('含估计', 'warn') }}</span>{% endif %}
         </td>
-        <td>
-          <form method="post" action="/capacity" class="inline">
+        <td class="num">
+          <form method="post" action="/capacity" class="inline"
+                style="justify-content:flex-end">
             <input type="hidden" name="campus" value="{{ r.campus }}">
-            <input name="cap" size="4" style="width:64px"
+            <input name="cap" class="w-num"
                    value="{{ r.cap if r.cap is not none else '' }}"
                    placeholder="不限">
-            <button type="submit">存</button>
+            <button type="submit" class="ghost">存</button>
           </form>
         </td>
         <td>

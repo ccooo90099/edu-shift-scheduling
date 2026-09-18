@@ -473,3 +473,111 @@ def test_htmx缺失提示说的是降级而不是坏了(client):
     body = client.get("/").text
     assert "已降级为整页刷新" in body
     assert "功能都能用" in body
+
+
+# ── 上传 → 求解 → 看结果（这条链之前是断的）─────────────────
+
+def _清单(tmp_path, centers, n_products=3):
+    import pandas as pd
+    产品 = ["编程理论", "双语文化", "文学美育"][:n_products]
+    rows = [{"团队ID": "T%d%d" % (ci, pi), "段次": "段次1", "周": "星期六",
+             "区域": "福田区", "中心": center, "程度": "S8", "产品": p,
+             "团队类型": "LI", "团队名称": "%s%s" % (center, p),
+             "首次服务时间": "08:10-10:10", "主指导员": "", "指导室": "01",
+             "是否促销": "否"}
+            for ci, center in enumerate(centers) for pi, p in enumerate(产品)]
+    path = tmp_path / "清单.xlsx"
+    pd.DataFrame(rows).to_excel(path, index=False)
+    return path
+
+
+def _等任务(tasks, tid, seconds=90):
+    import time
+    for _ in range(seconds):
+        t = tasks.get(tid)
+        if t.status.is_terminal:
+            return t
+        time.sleep(1)
+    return tasks.get(tid)
+
+
+@pytest.fixture
+def seeded(app):
+    from scheduling.application.use_cases.seed_demo import SeedDemo
+    c = app.state.container
+    SeedDemo(c.centers, c.instructors, c.calendars)()
+    return c
+
+
+def test_上传后会真的开始求解而不是永远排队(client, seeded, tmp_path):
+    """这条链之前是断的：create_task 只存了一条记录就返回，
+    没人调用求解器，任务永远停在「排队中」。"""
+    from scheduling.application.use_cases.seed_demo import DEMO_CENTERS
+    src = _清单(tmp_path, [c[0] for c in DEMO_CENTERS[:3]])
+    r = client.post("/tasks", data={"name": "e2e", "season": "寒暑假"},
+                    files={"upload": ("清单.xlsx", src.read_bytes(),
+                                      "application/vnd.ms-excel")},
+                    follow_redirects=False)
+    tid = r.headers["location"].rsplit("/", 1)[-1]
+
+    task = _等任务(seeded.tasks, tid)
+    assert task.status.value == "done", task.error
+    assert task.solver_status in ("OPTIMAL", "FEASIBLE")
+    assert task.output_path, "要写出 xlsx，下载才有东西"
+    assert task.score_breakdown, "要有得分明细"
+
+
+def test_没传文件的任务直接标失败而不是卡在排队中(client, seeded):
+    r = client.post("/tasks", data={"name": "空的", "season": "寒暑假"},
+                    follow_redirects=False)
+    tid = r.headers["location"].rsplit("/", 1)[-1]
+    task = seeded.tasks.get(tid)
+    assert task.status.value == "failed"
+    assert "没有上传团队清单" in task.error
+
+
+def test_看板页能看到排课结果_不用下载(client, seeded, tmp_path):
+    import re
+    from scheduling.application.use_cases.seed_demo import DEMO_CENTERS
+    src = _清单(tmp_path, [c[0] for c in DEMO_CENTERS[:2]])
+    r = client.post("/tasks", data={"name": "board", "season": "寒暑假"},
+                    files={"upload": ("x.xlsx", src.read_bytes(),
+                                      "application/vnd.ms-excel")},
+                    follow_redirects=False)
+    tid = r.headers["location"].rsplit("/", 1)[-1]
+    assert _等任务(seeded.tasks, tid).status.value == "done"
+
+    body = client.get("/tasks/%s/board" % tid).text
+    cells = re.findall(r'<span class="cellitem">([^<]+)</span>', body)
+    assert cells, "看板要有格子"
+    assert all(c.count("/") == 3 for c in cells), "格式是 程度/层级/科目/老师"
+
+
+def test_下载的是五个sheet的完整工作簿(client, seeded, tmp_path):
+    from openpyxl import load_workbook
+    from scheduling.application.use_cases.seed_demo import DEMO_CENTERS
+    src = _清单(tmp_path, [DEMO_CENTERS[0][0]])
+    r = client.post("/tasks", data={"name": "dl", "season": "寒暑假"},
+                    files={"upload": ("x.xlsx", src.read_bytes(),
+                                      "application/vnd.ms-excel")},
+                    follow_redirects=False)
+    tid = r.headers["location"].rsplit("/", 1)[-1]
+    assert _等任务(seeded.tasks, tid).status.value == "done"
+
+    resp = client.get("/tasks/%s/download" % tid)
+    assert resp.status_code == 200
+    out = tmp_path / "dl.xlsx"
+    out.write_bytes(resp.content)
+    assert set(load_workbook(out).sheetnames) == {
+        "总览", "排班明细", "看板", "老师课表", "问题清单"}
+
+
+def test_配置里的旧权重键报错要给出改名指引(client):
+    """光说「不认识」没用，得告诉人改成什么。"""
+    from scheduling.domain.policy.weights import Weights
+    with pytest.raises(ValueError) as e:
+        Weights.from_config({"跨中心一次": 800, "瞎写的": 1})
+    msg = str(e.value)
+    assert "现在叫「转场一次」" in msg
+    assert "已废弃" in msg
+    assert "可用的键" in msg

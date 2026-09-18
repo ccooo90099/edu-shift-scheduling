@@ -16,11 +16,12 @@
   {% block nav %}
   <nav class="topnav">
     <a class="brand" href="/">排班系统</a>
-    <a href="/centers">中心</a>
-    <a href="/instructors">指导员</a>
-    <a href="/capacity">场地容量</a>
-    <a href="/regions">区域相邻</a>
-    <a href="/calendar">学年日历</a>
+    {% set here = request.url.path %}
+    <a href="/centers"     class="{{ 'on' if here.startswith('/centers') }}">中心</a>
+    <a href="/instructors" class="{{ 'on' if here.startswith('/instructors') }}">指导员</a>
+    <a href="/capacity"    class="{{ 'on' if here.startswith('/capacity') }}">场地容量</a>
+    <a href="/regions"     class="{{ 'on' if here.startswith('/regions') }}">区域相邻</a>
+    <a href="/calendar"    class="{{ 'on' if here.startswith('/calendar') }}">学年日历</a>
     <span class="spacer"></span>
     <span class="env">测试 demo</span>
     <form method="post" action="/logout" style="display:inline">

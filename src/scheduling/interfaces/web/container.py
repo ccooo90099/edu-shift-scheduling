@@ -12,6 +12,7 @@ from pathlib import Path
 from ...application.use_cases.check_readiness import CheckReadiness
 from ...application.use_cases.run_health_check import RunHealthCheck
 from ...application.use_cases.run_solve import RunSolve
+from ...infrastructure.spreadsheet.export import write_workbook
 from ...infrastructure.persistence.sqlite import (
     SqliteCalendarRepository, SqliteCenterRepository,
     SqliteInstructorRepository, SqliteTaskRepository, connect)
@@ -31,7 +32,11 @@ class Container:
 
     @property
     def run_solve(self) -> RunSolve:
-        return RunSolve(self.tasks)
+        # 默认给 120 秒。求解很可能到点还没证明最优 —— 界面会如实
+        # 显示 FEASIBLE 和与下界的差距，不会把它说成「排好了」。
+        return RunSolve(self.tasks, time_limit=float(
+            os.environ.get("SCHEDULING_TIME_LIMIT", "120")),
+            workers=2, exporter=write_workbook)
 
     @property
     def run_health_check(self) -> RunHealthCheck:

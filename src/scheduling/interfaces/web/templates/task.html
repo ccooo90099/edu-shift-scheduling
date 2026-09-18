@@ -3,46 +3,53 @@
 
 {% block head_extra %}
 {% if not task.status.is_terminal %}
-{# 进度刷新的兜底：htmx 没加载上时，用整页 meta refresh 顶上。
-   这样「进度不会动」就不再取决于某个静态文件在不在 —— 那个文件
-   缺了只会让体验差一点（整页刷新而不是局部），不会让人对着
-   一个永远停在「求解中」的页面干等。
-   动态插入而不是写死在 HTML 里：htmx 在的话就不插，免得两套刷新打架。 #}
+{# 进度刷新的兜底：htmx 没加载上时用整页 meta refresh 顶上。
+   这样「进度不会动」就不再取决于某个静态文件在不在。
+   动态插入而不是写死：htmx 在的话就不插，免得两套刷新打架。 #}
 <script>
   if (!window.htmx) {
     var m = document.createElement('meta');
-    m.httpEquiv = 'refresh';
-    m.content = '3';
+    m.httpEquiv = 'refresh'; m.content = '3';
     document.head.appendChild(m);
   }
 </script>
 {% endif %}
 {% endblock %}
+
 {% block content %}
-{{ ui.page_title(task.name, task.season) }}
+{{ ui.page_title(task.name, task.season + ' · ' + task.created_at.strftime('%Y-%m-%d %H:%M')) }}
 
 <section class="card">
   <h2>求解进度</h2>
   {% include "_progress.html" %}
+  <div class="actions">
+    {% if task.output_path %}
+      <a class="btn" href="/tasks/{{ task.id }}/board">看板</a>
+      <a class="btn ghost" href="/tasks/{{ task.id }}/download">下载 Excel</a>
+    {% endif %}
+    {% if task.status.is_terminal and task.input_path %}
+      <form method="post" action="/tasks/{{ task.id }}/rerun">
+        <button type="submit" class="ghost">重新求解</button>
+      </form>
+    {% endif %}
+  </div>
 </section>
 
 {% if task.score_breakdown %}
 <section class="card">
   <h2>得分明细</h2>
-  <p class="note">求解目标与体检报告用的是**同一把尺子** —— 两侧各自实现
-     曾让同一份排班报出两个数。</p>
   <table>
-    <thead><tr><th>项</th><th>数量</th></tr></thead>
+    <thead><tr><th>项</th><th class="num">数量</th></tr></thead>
     <tbody>
       {% for k, v in task.score_breakdown.items() %}
-      <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+      <tr><td>{{ k }}</td><td class="num">{{ v }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
+  <p class="note">
+    求解目标与体检报告用的是<strong>同一把尺子</strong> ——
+    两侧各自实现曾让同一份排班报出两个数。
+  </p>
 </section>
-{% endif %}
-
-{% if task.output_path %}
-<p><a class="btn" href="/tasks/{{ task.id }}/download">下载排班表</a></p>
 {% endif %}
 {% endblock %}

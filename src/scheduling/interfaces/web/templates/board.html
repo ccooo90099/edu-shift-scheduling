@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}看板 · {{ task.name }}{% endblock %}
+{% block content %}
+{{ ui.page_title('看板 · ' + task.name, '行 = 校区，列 = 期位 × 时段') }}
+
+<div class="actions" style="margin:0 0 16px">
+  <a class="btn ghost" href="/tasks/{{ task.id }}">← 回任务</a>
+  {% if task.output_path %}
+  <a class="btn" href="/tasks/{{ task.id }}/download">下载 Excel</a>
+  {% endif %}
+</div>
+
+{% if grid %}
+<section class="card">
+  <h2>排课看板</h2>
+  <div class="board-wrap">
+    <table class="board">
+      <thead><tr>{% for h in grid.head %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for row in grid.body %}
+        <tr>
+          {% for cell in row %}
+          <td>
+            {% if loop.first %}{{ cell }}
+            {% else %}
+              {% for item in (cell or '').split('\n') if item %}
+              <span class="cellitem">{{ item }}</span>
+              {% endfor %}
+            {% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="note">
+    格子里是 <code>程度/层级/科目/指导员</code>。
+    网页和下载的 Excel 读的是<strong>同一份产物</strong>，不会对不上。
+  </p>
+</section>
+
+{% if detail %}
+<section class="card">
+  <h2>排班明细（{{ detail.body|length }} 行）</h2>
+  <div class="board-wrap">
+    <table class="board">
+      <thead><tr>{% for h in detail.head %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for row in detail.body %}
+        <tr>{% for cell in row %}<td>{{ cell if cell is not none else '' }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% else %}
+<section class="card">
+  {{ ui.empty_state('还没有结果',
+     '任务还没跑完，或者求解失败了。回任务页看看状态。') }}
+</section>
+{% endif %}
+{% endblock %}

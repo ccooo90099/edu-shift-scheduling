@@ -33,12 +33,13 @@
   {% if instructors %}
   <table>
     <thead><tr>
-      <th>姓名</th><th>可教产品</th><th>可去中心</th><th>不可用时段</th><th>单日上限</th>
+      <th>姓名</th><th>可教产品</th><th>可去中心</th><th>不可用时段</th>
+      <th class="num">单日上限</th>
     </tr></thead>
     <tbody>
       {% for i in instructors %}
       <tr class="{{ '' if i.is_configured else 'row-warn' }}">
-        <td>{{ i.name }}</td>
+        <td><strong>{{ i.name }}</strong></td>
         <td>
           {% if i.teachable %}
             {{ i.teachable | map(attribute='name') | sort | join('、') }}
@@ -46,7 +47,7 @@
         </td>
         <td>{{ i.allowed_centers | sort | join('、') if i.allowed_centers else '不限' }}</td>
         <td>{{ i.unavailable_slots | map(attribute='text') | sort | join('、') or '—' }}</td>
-        <td>{{ i.max_sessions_per_day }}</td>
+        <td class="num">{{ i.max_sessions_per_day }}</td>
       </tr>
       {% endfor %}
     </tbody>
