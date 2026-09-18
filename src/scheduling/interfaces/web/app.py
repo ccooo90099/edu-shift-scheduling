@@ -96,6 +96,32 @@ def _config_path() -> str:
 CONFIG_PATH = _config_path()
 
 
+def _unplaced_from_workbook(path) -> list[dict]:
+    """从明细里挑出没排上的团队。
+
+    「6 个没排上」这个数字本身没用 —— 得知道是**哪 6 个**，
+    才谈得上去加老师还是加教室。
+    """
+    from openpyxl import load_workbook
+    wb = load_workbook(path, read_only=True)
+    if "排班明细" not in wb.sheetnames:
+        wb.close()
+        return []
+    rows = list(wb["排班明细"].iter_rows(values_only=True))
+    wb.close()
+    if not rows:
+        return []
+    head = [str(h or "") for h in rows[0]]
+    idx = {name: head.index(name) for name in head}
+    out = []
+    for r in rows[1:]:
+        slot = r[idx.get("首次服务时间", -1)] if "首次服务时间" in idx else None
+        if slot:
+            continue
+        out.append({k: (r[i] if i < len(r) else "") for k, i in idx.items()})
+    return out
+
+
 def _board_from_workbook(path) -> dict:
     """从产物里读回看板。
 
@@ -425,7 +451,15 @@ def create_app(container: Container | None = None,
         task = c.tasks.get(task_id)
         if task is None:
             raise HTTPException(404, "没有这个任务")
-        return render(request, "task.html", task=task)
+        extra = {"grid": None, "unplaced": [], "placed": 0}
+        if task.output_path and Path(task.output_path).exists():
+            extra.update(_board_from_workbook(task.output_path))
+            extra["unplaced"] = _unplaced_from_workbook(task.output_path)
+            detail = extra.get("detail")
+            total = len(detail["body"]) if detail else 0
+            extra["placed"] = total - len(extra["unplaced"])
+            extra["total"] = total
+        return render(request, "task.html", task=task, **extra)
 
     @app.get("/tasks/{task_id}/progress", response_class=HTMLResponse)
     def task_progress(request: Request, task_id: str,

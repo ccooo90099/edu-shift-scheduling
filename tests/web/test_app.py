@@ -589,3 +589,51 @@ def test_配置里的旧权重键报错要给出改名指引(client):
     assert "现在叫「转场一次」" in msg
     assert "已废弃" in msg
     assert "可用的键" in msg
+
+
+def test_跑完后课表直接显示在任务页上_不用再点一次(client, seeded):
+    """用户说「结果呢」—— 原先任务页只有状态和得分，课表要再点一层。
+    结果本身才是主角。"""
+    import re
+    tid = client.post("/tasks/demo", follow_redirects=False) \
+        .headers["location"].rsplit("/", 1)[-1]
+    assert _等任务(seeded.tasks, tid, seconds=180).status.value == "done"
+
+    html = client.get("/tasks/%s" % tid).text
+    assert "排课结果" in html
+    assert 'class="board"' in html, "看板要直接嵌在任务页上"
+    assert re.findall(r'<span class="cellitem">', html), "要有排课格子"
+    assert "下载 Excel" in html
+
+
+def test_没排上的团队要列出来而不是只给个数字(client, seeded):
+    """「6 个没排上」没用 —— 得知道是哪 6 个，才谈得上加老师还是加教室。"""
+    tid = client.post("/tasks/demo", follow_redirects=False) \
+        .headers["location"].rsplit("/", 1)[-1]
+    task = _等任务(seeded.tasks, tid, seconds=180)
+    if not task.unplaced:
+        pytest.skip("这次全排上了，没有可列的")
+
+    html = client.get("/tasks/%s" % tid).text
+    assert "没排上的 %d 个团队" % task.unplaced in html
+    assert "加能教这门课的老师" in html, "要说清怎么才能排进去"
+
+
+def test_总分要解释清楚而不是甩一个数字(client, seeded):
+    """「目标值 600240」对人没有意义，得说明它主要由什么构成。"""
+    tid = client.post("/tasks/demo", follow_redirects=False) \
+        .headers["location"].rsplit("/", 1)[-1]
+    task = _等任务(seeded.tasks, tid, seconds=180)
+    html = client.get("/tasks/%s" % tid).text
+    if task.unplaced:
+        assert "没排上的权重远高于其他" in html
+
+
+def test_跑完但没有产物时页面不会是空的(client, app):
+    """条件写成「没跑完才显示进度卡」的话，跑完却没产物时两张卡都不显示。"""
+    from scheduling.application.dto import SolveTask, TaskStatus
+    app.state.container.tasks.create(SolveTask(
+        id="noout", name="x", season="寒暑假", status=TaskStatus.DONE,
+        solver_status="FEASIBLE", objective=1.0, best_bound=0.0))
+    html = client.get("/tasks/noout").text
+    assert "求解进度" in html and "FEASIBLE" in html

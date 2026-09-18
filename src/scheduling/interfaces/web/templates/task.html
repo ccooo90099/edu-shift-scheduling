@@ -3,9 +3,8 @@
 
 {% block head_extra %}
 {% if not task.status.is_terminal %}
-{# 进度刷新的兜底：htmx 没加载上时用整页 meta refresh 顶上。
-   这样「进度不会动」就不再取决于某个静态文件在不在。
-   动态插入而不是写死：htmx 在的话就不插，免得两套刷新打架。 #}
+{# htmx 没加载上时用整页 meta refresh 兜底，进度照样会动。
+   动态插入：htmx 在的话就不插，免得两套刷新打架。 #}
 <script>
   if (!window.htmx) {
     var m = document.createElement('meta');
@@ -19,25 +18,127 @@
 {% block content %}
 {{ ui.page_title(task.name, task.season + ' · ' + task.created_at.strftime('%Y-%m-%d %H:%M')) }}
 
+{# 进度卡：只在「还没有结果可展示」时当主角。
+   注意条件不能写成「没跑完就显示」—— 跑完了但没产物（求解失败、
+   或者产物被清掉了）时两张卡都不显示，页面就空了。 #}
+{% if not grid %}
 <section class="card">
   <h2>求解进度</h2>
   {% include "_progress.html" %}
+  {% if task.status.is_terminal and task.input_path %}
   <div class="actions">
-    {% if task.output_path %}
-      <a class="btn" href="/tasks/{{ task.id }}/board">看板</a>
-      <a class="btn ghost" href="/tasks/{{ task.id }}/download">下载 Excel</a>
-    {% endif %}
-    {% if task.status.is_terminal and task.input_path %}
-      <form method="post" action="/tasks/{{ task.id }}/rerun">
-        <button type="submit" class="ghost">重新求解</button>
-      </form>
-    {% endif %}
+    <form method="post" action="/tasks/{{ task.id }}/rerun">
+      <button type="submit" class="ghost">重新求解</button>
+    </form>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+{# ── 跑完了：结果是主角 ── #}
+{% if grid %}
+<section class="card">
+  <h2>排课结果</h2>
+  <dl class="kv" style="margin-bottom:4px">
+    <dt>排上</dt>
+    <dd><strong style="font-size:17px">{{ placed }}</strong> / {{ total }} 个团队
+      {% if task.unplaced %}
+        <span class="badge badge-warn" style="margin-left:6px">{{ task.unplaced }} 个没排上</span>
+      {% else %}
+        <span class="badge badge-ok" style="margin-left:6px">全部排上</span>
+      {% endif %}
+    </dd>
+    <dt>求解</dt>
+    <dd>
+      {{ ui.badge('已证明最优' if task.solver_status == 'OPTIMAL' else task.solver_status,
+                  'ok' if task.solver_status == 'OPTIMAL' else 'warn') }}
+      <small style="margin-left:6px">用时 {{ '%.1f' % task.elapsed_seconds }} 秒</small>
+    </dd>
+  </dl>
+
+  <div class="board-wrap" style="margin-top:12px">
+    <table class="board">
+      <thead><tr>{% for h in grid.head %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for row in grid.body %}
+        <tr>
+          {% for cell in row %}
+          <td>
+            {% if loop.first %}{{ cell }}
+            {% else %}
+              {% for item in (cell or '').split('\n') if item %}
+              <span class="cellitem">{{ item }}</span>
+              {% endfor %}
+            {% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="note">
+    行 = 校区，列 = 期位 × 时段，格子里是 <code>程度/层级/科目/指导员</code>。
+  </p>
+
+  <div class="actions">
+    <a class="btn" href="/tasks/{{ task.id }}/download">下载 Excel（5 个 sheet）</a>
+    <a class="btn ghost" href="/tasks/{{ task.id }}/board">全屏看板 + 明细</a>
+    <form method="post" action="/tasks/{{ task.id }}/rerun">
+      <button type="submit" class="ghost">重新求解</button>
+    </form>
   </div>
 </section>
+{% endif %}
+
+{# ── 没排上的是最该被看见的 ── #}
+{% if unplaced %}
+<section class="card">
+  <h2>没排上的 {{ unplaced|length }} 个团队</h2>
+  <p class="note" style="margin-bottom:12px">
+    这几个是真的放不下 —— 求解器已经证明了在当前约束下没有更好的解。
+    要排进去，得<strong>加教室</strong>、<strong>加能教这门课的老师</strong>，
+    或者<strong>放宽校区并发上限</strong>。
+  </p>
+  <table>
+    <thead><tr>
+      <th>团队</th><th>中心</th><th>程度</th><th>科目</th><th>层级</th>
+    </tr></thead>
+    <tbody>
+      {% for u in unplaced %}
+      <tr>
+        <td><strong>{{ u.get('团队名称') or u.get('团队ID') }}</strong></td>
+        <td>{{ u.get('中心') }}</td>
+        <td>{{ u.get('程度') }}</td>
+        <td>{{ u.get('产品') }}</td>
+        <td>{{ u.get('团队类型') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if task.notes %}
+<section class="card">
+  <h2>求解说明</h2>
+  <ul class="notes" style="padding-top:16px">
+    {% for n in task.notes %}<li>{{ n }}</li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
 
 {% if task.score_breakdown %}
 <section class="card">
   <h2>得分明细</h2>
+  <p class="note" style="margin-bottom:12px">
+    分数越低越好。
+    {% if task.unplaced %}
+      这次总分 {{ '%.0f' % task.objective }} 里，
+      <strong>{{ '%.0f' % (task.unplaced * 100000) }} 是那 {{ task.unplaced }} 个没排上的</strong>
+      —— 没排上的权重远高于其他，所以总分主要由它决定。
+    {% endif %}
+  </p>
   <table>
     <thead><tr><th>项</th><th class="num">数量</th></tr></thead>
     <tbody>
