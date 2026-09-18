@@ -164,9 +164,15 @@ def test_权重是按键覆盖_未提供的键保留默认():
 
 
 def test_未知权重键直接报错而不是静默忽略():
-    """改键名没同步到体检侧，一侧会静默用默认值 —— 宁可启动就炸。"""
-    with pytest.raises(ValueError, match="未知权重键"):
-        Weights.from_config({"工作量方差": 30})
+    """改键名没同步到体检侧，一侧会静默用默认值 —— 宁可启动就炸。
+    但报错要能照着改，不能只说「不认识」。"""
+    with pytest.raises(ValueError) as e:
+        Weights.from_config({"工作量方差": 30, "彻底不存在的": 1})
+    msg = str(e.value)
+    assert "现在叫「工作量峰值」" in msg, "旧键名要给出改名指引"
+    assert "已废弃" in msg, "查无此名的要说明可以删掉"
+    assert "可用的键" in msg
+    assert "静默忽略会让你调的权重完全不生效" in msg, "要说明为什么不忽略"
 
 
 def test_生效权重报告标出被覆盖的项():
